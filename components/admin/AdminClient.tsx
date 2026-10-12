@@ -47,7 +47,11 @@ export function AdminLogin({ configured }: { configured: boolean }) {
   return (
     <main className="container section" style={{ maxWidth: 440 }}>
       <form className="panel stack" style={{ gap: 16 }} onSubmit={async (e) => { e.preventDefault(); if (await run("POST", "/api/admin/login", { password: pw })) window.location.reload(); }}>
-        <h2 style={{ fontSize: "1.8rem" }}>GroupBuy admin</h2>
+        <div style={{ textAlign: "center", marginBottom: 6 }}>
+          <img src="/icon.svg" alt="GroupBuy" width={64} height={64} style={{ borderRadius: 16, margin: "0 auto 14px", boxShadow: "0 6px 20px rgba(108,71,255,.3)" }} />
+          <h2 style={{ fontSize: "1.8rem" }}>GroupBuy</h2>
+          <p className="muted small" style={{ marginTop: 4 }}>Admin dashboard</p>
+        </div>
         {!configured && <div className="alert warn">Set the <code>ADMIN_PASSWORD</code> environment variable, then restart the app.</div>}
         <div className="field">
           <label htmlFor="pw">Password</label>

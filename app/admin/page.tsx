@@ -37,7 +37,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <div className="admin-shell">
       <div className="admin-top">
         <div className="container header-inner">
-          <Link href="/admin" className="logo" style={{ color: "#fff" }}><span className="logo-mark">G</span>GroupBuy admin</Link>
+          <Link href="/admin" className="logo" style={{ color: "#fff" }}>
+            <img src="/icon.svg" alt="" width={30} height={30} style={{ borderRadius: 8 }} />
+            GroupBuy
+            <span className="badge" style={{ background: "rgba(255,255,255,.14)", color: "#fff", marginLeft: 2 }}>Admin</span>
+          </Link>
           <div className="spacer" />
           <Link href="/" className="small" style={{ color: "#c9c4d4" }}>View site ↗</Link>
           <LogoutButton />
