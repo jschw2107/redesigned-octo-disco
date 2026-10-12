@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { adminConfigured, isAdmin } from "@/lib/auth";
-import { all } from "@/lib/db";
+import { all, databaseIsTemporary } from "@/lib/db";
 import {
   currentCycle, fmtDate, fmtMoney, getProducts, getSettings, getUniversities, groupProgress, pickupTime, type Cycle,
 } from "@/lib/data";
@@ -47,6 +47,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {TABS.map(([k, label]) => <Link key={k} href={`/admin?tab=${k}`} className={tab === k ? "on" : ""}>{label}</Link>)}
       </div></nav>
       <main className="container" style={{ paddingBottom: 80 }}>
+        {databaseIsTemporary() && (
+          <div className="alert error" style={{ marginBottom: 20 }}>
+            <strong>Database not connected.</strong> Orders, signups and settings are being stored temporarily and will be lost
+            when Vercel restarts the app. Add <code>DATABASE_URL</code> and <code>DATABASE_AUTH_TOKEN</code> (from Turso) in Vercel → Settings → Environment Variables, then redeploy.
+          </div>
+        )}
         {tab === "overview" && <Overview />}
         {tab === "orders" && <Orders cycleParam={sp.cycle} />}
         {tab === "schedule" && <Schedule />}

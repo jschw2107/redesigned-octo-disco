@@ -7,7 +7,9 @@ import { localInputToIso } from "./tz";
 function makeClient(): Client {
   const url = process.env.DATABASE_URL;
   if (url) return createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
-  const dir = path.join(process.cwd(), "data");
+  // On Vercel the project folder is read-only, so without DATABASE_URL fall back to /tmp.
+  // That keeps the site working, but data there is temporary: connect Turso for real use.
+  const dir = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
   fs.mkdirSync(dir, { recursive: true });
   return createClient({ url: `file:${path.join(dir, "groupbuy.db")}` });
 }
@@ -154,6 +156,11 @@ async function init(c: Client) {
     { sql: "INSERT OR REPLACE INTO settings VALUES ('migrated_yu', '1')", args: [] },
   ];
   await c.batch(stmts, "write");
+}
+
+/** True when running on a host where the database file is temporary (Vercel without DATABASE_URL). */
+export function databaseIsTemporary() {
+  return !!process.env.VERCEL && !process.env.DATABASE_URL;
 }
 
 export async function db(): Promise<Client> {
