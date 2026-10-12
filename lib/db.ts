@@ -4,9 +4,12 @@ import path from "node:path";
 import { localInputToIso } from "./tz";
 
 // Local dev: a SQLite file in ./data. Production: set DATABASE_URL (+ DATABASE_AUTH_TOKEN) to a Turso/libSQL database.
+// Accepts our own names or the ones Turso's Vercel integration sets automatically.
+const dbUrl = () => process.env.DATABASE_URL || process.env.TURSO_DATABASE_URL;
+
 function makeClient(): Client {
-  const url = process.env.DATABASE_URL;
-  if (url) return createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
+  const url = dbUrl();
+  if (url) return createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN });
   // On Vercel the project folder is read-only, so without DATABASE_URL fall back to /tmp.
   // That keeps the site working, but data there is temporary: connect Turso for real use.
   const dir = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
@@ -160,7 +163,7 @@ async function init(c: Client) {
 
 /** True when running on a host where the database file is temporary (Vercel without DATABASE_URL). */
 export function databaseIsTemporary() {
-  return !!process.env.VERCEL && !process.env.DATABASE_URL;
+  return !!process.env.VERCEL && !dbUrl();
 }
 
 export async function db(): Promise<Client> {
