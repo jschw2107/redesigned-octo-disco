@@ -16,5 +16,6 @@ export async function GET() {
     email: emailEnabled() ? "on" : "off",
     email_from: process.env.EMAIL_FROM ? "set" : "not set",
     site_url: process.env.SITE_URL || "not set",
+    version: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
   });
 }
