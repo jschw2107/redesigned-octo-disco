@@ -6,6 +6,7 @@ import { getUniversities } from "@/lib/data";
 import { all } from "@/lib/db";
 import { demand, getFeeBps, listCampaigns, usd, usdCompact } from "@/lib/campaigns";
 import { pct } from "@/lib/consent";
+import { extrasOnSale } from "@/lib/extras";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ export default async function Home() {
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
   const campus = unis.length === 1 ? unis[0].name : "your campus";
   const live = campaigns.filter((c) => c.status === "live");
-  const rest = campaigns.filter((c) => c.status !== "live");
+  const inStock = campaigns.filter(extrasOnSale);
+  const rest = campaigns.filter((c) => c.status !== "live" && !extrasOnSale(c));
 
   return (
     <>
@@ -62,6 +64,17 @@ export default async function Home() {
             <div className="dots" aria-hidden>{Array.from({ length: 30 }, (_, i) => <span key={i} />)}</div>
           </div>
         </section>
+
+        {inStock.length > 0 && (
+          <section className="section" id="in-stock" style={{ paddingBottom: 0 }}>
+            <div className="container">
+              <div className="eyebrow">Buy now</div>
+              <h2>📦 In stock now</h2>
+              <p className="lead">Extra units from closed GroupBuys, sold near the group price. First come, first served.</p>
+              <div className="grid gb-grid" style={{ marginTop: 28 }}>{inStock.map((c) => <CampaignCard key={c.id} c={c} stock />)}</div>
+            </div>
+          </section>
+        )}
 
         <section className="section" id="groupbuys">
           <div className="container">

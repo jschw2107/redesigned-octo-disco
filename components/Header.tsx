@@ -27,11 +27,13 @@ export function Header() {
         <Logo />
         <nav className="nav" aria-label="Main">
           <Link href="/#groupbuys">Live GroupBuys</Link>
+          <Link href="/in-stock">In stock</Link>
           <Link href="/#how-it-works">How it works</Link>
           <Link href="/requests">Request a GroupBuy</Link>
         </nav>
         <div className="spacer" />
-        <Link className="btn sm" href="/#groupbuys">Join a GroupBuy</Link>
+        <Link className="btn sm ghost nav-mobile" href="/in-stock">In stock</Link>
+        <Link className="btn sm" href="/#groupbuys">Join<span className="hide-sm"> a GroupBuy</span></Link>
       </div>
     </header>
   );

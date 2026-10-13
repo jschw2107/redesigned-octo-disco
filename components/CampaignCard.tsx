@@ -16,31 +16,38 @@ export function StateBadge({ c }: { c: CampaignWithStats }) {
   return <span className={`badge ${cls}`}>{st.label}</span>;
 }
 
-export function CampaignCard({ c }: { c: CampaignWithStats }) {
+export function CampaignCard({ c, stock = false }: { c: CampaignWithStats; stock?: boolean }) {
   const l = ladder(c);
   const st = publicState(c);
-  const price = c.status === "deal" && c.final_cents ? c.final_cents : l.current;
+  const price = stock && c.extra_cents ? c.extra_cents : c.status === "deal" && c.final_cents ? c.final_cents : l.current;
   const off = c.normal_cents > 0 ? Math.round((1 - price / c.normal_cents) * 100) : 0;
   return (
     <article className="card gb-card">
-      <Link href={campaignPath(c.number)} className="gb-card-link" aria-label={`GroupBuy #${code(c.number)}: ${c.title}`}>
+      <Link href={campaignPath(c.number) + (stock ? "#buy-now" : "")} className="gb-card-link" aria-label={`GroupBuy #${code(c.number)}: ${c.title}`}>
         <CampaignVisual c={c} />
         <div className="card-body">
           <div className="row" style={{ gap: 8 }}>
             <span className="tag">GroupBuy #{code(c.number)}</span>
             <div className="spacer" />
-            <StateBadge c={c} />
+            {stock ? <span className="badge good">In stock</span> : <StateBadge c={c} />}
           </div>
           <h3>{c.title}</h3>
           {c.summary && <p className="small muted">{c.summary}</p>}
           <div className="gb-prices">
             <div><div className="small muted">Normal price</div><s className="muted">{usd(c.normal_cents)}</s></div>
             <div>
-              <div className="small muted">{c.status === "deal" ? "Deal price" : "GroupBuy target"}</div>
+              <div className="small muted">{stock ? "Buy now" : c.status === "deal" ? "Deal price" : "GroupBuy target"}</div>
               <strong className="gb-target">{usd(price)}</strong>
             </div>
             {off > 0 && <span className="badge good" style={{ alignSelf: "end" }}>−{off}%</span>}
           </div>
+          {stock ? (
+            <div className="row small" style={{ gap: 6, marginTop: 4 }}>
+              <span>📦 <strong>{c.extra_units}</strong> {plural(c.extra_units, c.unit)} left</span>
+              <div className="spacer" />
+              <span className="btn sm accent">Buy now →</span>
+            </div>
+          ) : (
           <div className="stack" style={{ gap: 6, marginTop: 4 }}>
             <div className="row small" style={{ gap: 6 }}>
               <span>👥 <strong>{c.units}</strong> {plural(c.units, c.unit)} committed</span>
@@ -55,6 +62,7 @@ export function CampaignCard({ c }: { c: CampaignWithStats }) {
               <span className="badge good" style={{ alignSelf: "flex-start" }}>📦 {c.extra_units} extra {plural(c.extra_units, c.unit)} for sale · {usd(c.extra_cents)}</span>
             ) : null}
           </div>
+          )}
         </div>
       </Link>
     </article>

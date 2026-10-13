@@ -31,7 +31,7 @@ export function BuyExtras({ campaign, unit, priceCents, left, groupPriceCents, u
   }
 
   return (
-    <form className="panel stack" style={{ gap: 16 }} onSubmit={submit}>
+    <form id="buy-now" className="panel stack" style={{ gap: 16, scrollMarginTop: 88 }} onSubmit={submit}>
       <div className="row">
         <h3>Buy now: {usd(priceCents)} each</h3>
         <div className="spacer" />
