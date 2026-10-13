@@ -8,6 +8,13 @@ import { feePerUnit, pct } from "@/lib/consent";
 import { sessionExpiry, stripe } from "@/lib/stripe";
 
 /** A buyer who won the deal pays the clearing price through Stripe Checkout. */
+/** Stripe needs a full public URL for product images; uploaded pictures are stored as /api/images/<id>. */
+function productImage(url: string, base: string) {
+  if (!url) return null;
+  const abs = url.startsWith("/") ? `${base}${url}` : url;
+  return /^https?:\/\//.test(abs) ? abs : null;
+}
+
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: string }> }) => {
   const { token } = await ctx.params;
   const m = await getCommitment(token);
@@ -33,7 +40,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: 
         quantity: m.qty,
         price_data: {
           currency: "usd", unit_amount: camp.final_cents,
-          product_data: { name: `GroupBuy #${code(camp.number)}: ${camp.title}`, ...(camp.summary ? { description: camp.summary } : {}), ...(camp.image_url ? { images: [camp.image_url] } : {}) },
+          product_data: { name: `GroupBuy #${code(camp.number)}: ${camp.title}`, ...(camp.summary ? { description: camp.summary } : {}), ...(productImage(camp.image_url, base) ? { images: [productImage(camp.image_url, base)!] } : {}) },
         },
       },
       ...(fee > 0 ? [{

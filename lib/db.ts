@@ -79,6 +79,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS requests (
      id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '',
      target_cents INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', campaign_id INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS images (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER, mime TEXT NOT NULL, data BLOB NOT NULL,
+     bytes INTEGER NOT NULL, width INTEGER, height INTEGER, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS request_votes (
      id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
      email TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(request_id, email))`,

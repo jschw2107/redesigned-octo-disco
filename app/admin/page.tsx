@@ -9,7 +9,7 @@ import { paymentsEnabled } from "@/lib/stripe";
 import { emailEnabled } from "@/lib/email";
 import { AdminLogin, CampusManager, DeleteWaitlist, IntegrationsPanel, LogoutButton } from "@/components/admin/AdminClient";
 import {
-  AnnounceButton, CampaignEditor, CancelCommitment, CopyText, DealPanel, DeleteCampaign, NewCampaignButton, RequestActions,
+  AnnounceButton, CampaignEditor, CancelCommitment, ImageUploader, CopyText, DealPanel, DeleteCampaign, NewCampaignButton, RequestActions,
   SettingsForm, StatusControl,
 } from "@/components/admin/Campaigns";
 import { Countdown } from "@/components/Countdown";
@@ -216,7 +216,10 @@ async function CampaignDetail({ id }: { id: number }) {
             </div>
           )}
         </div>
-        <CampaignEditor c={c} tz={tz} />
+        <div className="stack" style={{ gap: 16 }}>
+          <ImageUploader id={c.id} imageUrl={c.image_url} emoji={c.emoji} />
+          <CampaignEditor c={c} tz={tz} />
+        </div>
       </div>
       <Buyers campaignId={c.id} embedded />
     </>

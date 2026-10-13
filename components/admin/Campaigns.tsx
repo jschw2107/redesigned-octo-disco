@@ -246,3 +246,70 @@ export function SettingsForm({ domains, feePct }: { domains: string; feePct: str
     </form>
   );
 }
+
+/* ---------- product picture ---------- */
+
+/** Shrinks a photo in the browser (max 1200px, JPEG) so uploads are small and pages stay fast. */
+async function resize(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
+  if (file.type === "image/gif") {
+    // Keep animated GIFs as-is.
+    const dataUrl = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(file); });
+    return { dataUrl, width: 0, height: 0 };
+  }
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h); // transparent PNGs get a white background
+  ctx.drawImage(bmp, 0, 0, w, h);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.86), width: w, height: h };
+}
+
+export function ImageUploader({ id, imageUrl, emoji }: { id: number; imageUrl: string; emoji: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [drag, setDrag] = useState(false);
+
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setErr("Choose an image file (JPG, PNG, WebP or GIF).");
+    setBusy(true); setErr(null);
+    try {
+      const { dataUrl, width, height } = await resize(file);
+      const r = await api("POST", "/api/admin/images", { campaign_id: id, data_url: dataUrl, width, height });
+      if (!r.ok) setErr(r.error ?? "Upload failed");
+      else router.refresh();
+    } catch {
+      setErr("Couldn’t read that image. Try a JPG or PNG.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="panel stack" style={{ gap: 12 }}>
+      <h3>Product picture</h3>
+      <label
+        className={`img-drop ${drag ? "drag" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files?.[0]); }}
+      >
+        {imageUrl ? <img src={imageUrl} alt="Product" /> : <span className="img-emoji" aria-hidden>{emoji || "🛍️"}</span>}
+        <span className="img-hint">{busy ? "Uploading…" : imageUrl ? "Click or drop a new picture to replace" : "Click or drop a picture here"}</span>
+        <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
+      </label>
+      <p className="small muted">Shown on the GroupBuy card, its page and Stripe’s checkout. Large photos are resized automatically. Without a picture, the emoji is used.</p>
+      {err && <div className="alert error">{err}</div>}
+      {imageUrl && (
+        <div><button className="btn sm ghost" disabled={busy} onClick={async () => {
+          if (!confirm("Remove this picture?")) return;
+          setBusy(true); const r = await api("DELETE", "/api/admin/images", { campaign_id: id }); setBusy(false);
+          if (r.ok) router.refresh(); else setErr(r.error ?? "Failed");
+        }}>Remove picture</button></div>
+      )}
+    </div>
+  );
+}
