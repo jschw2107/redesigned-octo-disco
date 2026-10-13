@@ -95,7 +95,7 @@ export default async function Home() {
               <div className="step"><div className="step-num">04</div><h3>Automatic checkout</h3><p>If the deal lands at or below your price, your card is charged the group’s final price automatically. Everyone pays the same.</p></div>
             </div>
             <div className="promise" style={{ marginTop: 22 }}>
-              <strong>Your target price decides whether you’re in the deal, not what we charge you.</strong>
+              <strong>Your maximum price decides whether you’re in the deal, not what we charge you.</strong>
               <p className="small">
                 Jack joins at ≤$200, David at ≤$190, Michael at ≤$180. A seller offers $175, so all three pay $175. Nobody is charged more for being honest about what
                 they’d pay.
