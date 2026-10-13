@@ -147,6 +147,8 @@ const COLUMNS: Array<[string, string]> = [
   ["campaigns", "bought_units INTEGER"],
   ["campaigns", "extra_units INTEGER NOT NULL DEFAULT 0"],
   ["campaigns", "extra_cents INTEGER"],
+  // Products added straight to the In stock page by the admin (no GroupBuy round)
+  ["campaigns", "stock_only INTEGER NOT NULL DEFAULT 0"],
   // GroupBuy's savings-share fee: rate agreed at join time (basis points) and the amount charged at deal time
   ["commitments", "fee_bps INTEGER"],
   ["commitments", "fee_amount_cents INTEGER"],

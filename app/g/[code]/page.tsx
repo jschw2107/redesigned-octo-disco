@@ -31,6 +31,7 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   const c = await load((await params).code);
   if (!c) return { title: "GroupBuy" };
   const l = ladder(c);
+  if (c.stock_only) return { title: `${c.title}: ${usd(c.extra_cents ?? c.final_cents)} in stock`, description: c.summary || `Buy now from GroupBuy while stock lasts.` };
   return {
     title: `GroupBuy #${code(c.number)}: ${c.title} at ${usd(l.current)} (normally ${usd(c.normal_cents)})`,
     description: `${c.units} ${plural(c.units, c.unit)} committed. Join at your price; everyone pays the same final price.`,
@@ -47,6 +48,49 @@ export default async function CampaignPage({ params, searchParams }: { params: P
   if (!c) notFound();
   const [settings, universities, domains, curve, feeBps] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c), getFeeBps()]);
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
+  if (c.stock_only) {
+    const price = c.extra_cents ?? c.final_cents ?? 0;
+    const off = c.normal_cents > price ? Math.round((1 - price / c.normal_cents) * 100) : 0;
+    return (
+      <>
+        <Header />
+        <main className="container section" style={{ paddingTop: 32 }}>
+          <Link href="/in-stock" className="small muted">← In stock</Link>
+          <div className="split" style={{ marginTop: 16 }}>
+            <div className="stack" style={{ gap: 22 }}>
+              <div className="row" style={{ gap: 10 }}>
+                {c.category && <span className="tag">{c.category}</span>}
+                <span className={`badge ${extrasOnSale(c) ? "good" : "neutral"}`}>{extrasOnSale(c) ? "In stock" : "Sold out"}</span>
+              </div>
+              <h1 style={{ fontSize: "clamp(2.2rem, 5vw, 3.4rem)" }}>{c.title}</h1>
+              {c.summary && <p className="lead" style={{ marginTop: 0 }}>{c.summary}</p>}
+              <CampaignVisual c={c} size="hero" />
+              <div className="gb-stats">
+                {off > 0 && <div><div className="small muted">Normal price</div><div className="gb-stat"><s>{usd(c.normal_cents)}</s></div></div>}
+                <div><div className="small muted">Buy now</div><div className="gb-stat accent">{usd(price)}</div></div>
+                <div><div className="small muted">Left</div><div className="gb-stat">📦 {c.extra_units}</div></div>
+                {off > 0 && <div><div className="small muted">You save</div><div className="gb-stat">{off}%</div></div>}
+              </div>
+              {c.description && <p>{c.description}</p>}
+            </div>
+            <aside className="stack" style={{ gap: 16, position: "sticky", top: 88 }}>
+              {sp.extra_cancelled && <div className="alert warn small">Checkout cancelled: you weren’t charged and the items are back on sale.</div>}
+              {extrasOnSale(c) ? (
+                <BuyExtras campaign={c.number} unit={c.unit} priceCents={price} left={c.extra_units} universities={unis} online={paymentsEnabled()} stockOnly />
+              ) : (
+                <div className="panel stack">
+                  <h3>Sold out</h3>
+                  <p className="muted">Get an alert for the next GroupBuy, or see what else is in stock.</p>
+                  <Link className="btn ghost" href="/in-stock">In stock now</Link>
+                </div>
+              )}
+            </aside>
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
   const l = ladder(c);
   const st = publicState(c);
   const open = isOpen(c);

@@ -4,7 +4,8 @@ import { all, run } from "@/lib/db";
 import { csv } from "@/lib/admin";
 import { handle, body } from "@/lib/http";
 import { InputError } from "@/lib/validate";
-import { cancelExtraOrder } from "@/lib/extras";
+import { cancelExtraOrder, defaultExtraPrice } from "@/lib/extras";
+import { getCampaign } from "@/lib/campaigns";
 
 /** Edit extras stock/price, or cancel an extras order (refund + email). */
 export const PATCH = handle(async (req: Request) => {
@@ -24,6 +25,13 @@ export const PATCH = handle(async (req: Request) => {
     const c = Math.round(Number(String(b.price).replace(/[$,\s]/g, "")) * 100);
     if (!Number.isFinite(c) || c < 50) throw new InputError("Price must be at least $0.50");
     await run("UPDATE campaigns SET extra_cents=? WHERE id=?", [c, id]);
+  }
+  // Units with no price yet: use the default (group's all-in price + markup) so they go on sale right away.
+  const camp = await getCampaign({ id });
+  if (camp && camp.extra_units > 0 && !camp.extra_cents) {
+    const d = await defaultExtraPrice(camp);
+    if (d) await run("UPDATE campaigns SET extra_cents=? WHERE id=?", [d, id]);
+    else throw new InputError("Set a price per unit to put these on sale");
   }
   return NextResponse.json({ ok: true });
 });

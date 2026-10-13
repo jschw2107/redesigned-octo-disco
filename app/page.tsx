@@ -21,7 +21,7 @@ export default async function Home() {
   const campus = unis.length === 1 ? unis[0].name : "your campus";
   const live = campaigns.filter((c) => c.status === "live");
   const inStock = campaigns.filter(extrasOnSale);
-  const rest = campaigns.filter((c) => c.status !== "live" && !extrasOnSale(c));
+  const rest = campaigns.filter((c) => c.status !== "live" && !extrasOnSale(c) && !c.stock_only);
 
   return (
     <>

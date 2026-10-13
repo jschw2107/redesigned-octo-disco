@@ -69,7 +69,8 @@ p { margin: 0; }
 .cart-count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 0.72rem; min-width: 20px; height: 20px; display: inline-grid; place-items: center; padding: 0 6px; }
 .nav-mobile { display: none; }
 @media (max-width: 860px) { .nav { display: none; } .nav-mobile { display: inline-flex; } }
-@media (max-width: 480px) { .hide-sm { display: none; } .header-inner { gap: 10px; } }
+.show-sm { display: none; }
+@media (max-width: 480px) { .hide-sm { display: none; } .show-sm { display: inline; } .header-inner { gap: 10px; } }
 
 /* Hero */
 .hero { padding: 72px 0 56px; }

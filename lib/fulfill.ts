@@ -6,7 +6,7 @@ import {
   campaignLiveEmail, commitCancelledEmail, commitPaidEmail, dealChargedEmail, dealMissedEmail, dealWonEmail, sendEmail,
 } from "./email";
 import { chargeSavedCard } from "./cards";
-import { DEFAULT_MARKUP_BPS, cancelExtraOrder, extraPrice } from "./extras";
+import { DEFAULT_MARKUP_BPS, addToStock, cancelExtraOrder, extraPrice } from "./extras";
 import { feePerUnit, pct } from "./consent";
 import { paymentsEnabled, stripe } from "./stripe";
 
@@ -157,13 +157,18 @@ export async function cancelCommitment(id: number, opts: { reason?: "admin" | "c
   const refunded = m.status === "paid" ? await refund(m.payment_intent, m.refunded_cents, m.amount_cents ?? 0) : 0;
   await run("UPDATE commitments SET status='cancelled', refunded_cents=refunded_cents+?, updated_at=? WHERE id=?", [refunded, new Date().toISOString(), id]);
   const camp = await getCampaign({ id: m.campaign_id });
+  // The deal was already bought for this buyer: their units go back on sale automatically (admin can edit them on the In stock tab).
+  let restocked = 0;
+  if (camp && camp.status === "deal" && (m.status === "won" || m.status === "paid") && opts.reason !== "campaign") {
+    restocked = await addToStock(camp.id, m.qty);
+  }
   if (camp && ["active", "pending_card", "pending", "won", "paid"].includes(m.status)) {
     await sendEmail(commitCancelledEmail({
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, refundedCents: refunded,
       wasCharged: m.status === "paid", reason: opts.reason ?? "admin", url: opts.base,
     }));
   }
-  return { refunded };
+  return { refunded, restocked };
 }
 
 /** Admin cancels a whole GroupBuy: every open order is cancelled (paid ones refunded) and everyone is emailed. */

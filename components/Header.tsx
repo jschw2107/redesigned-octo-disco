@@ -33,7 +33,7 @@ export function Header() {
         </nav>
         <div className="spacer" />
         <Link className="btn sm ghost nav-mobile" href="/in-stock">In stock</Link>
-        <Link className="btn sm" href="/#groupbuys">Join<span className="hide-sm"> a GroupBuy</span></Link>
+        <Link className="btn sm" href="/#groupbuys"><span className="hide-sm">Join a GroupBuy</span><span className="show-sm">Join</span></Link>
       </div>
     </header>
   );

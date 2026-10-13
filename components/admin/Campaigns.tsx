@@ -187,12 +187,13 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
 }
 
 /* ---------- row actions ---------- */
-export function CancelCommitment({ id, paid }: { id: number; paid: boolean }) {
+export function CancelCommitment({ id, paid, restock = false }: { id: number; paid: boolean; restock?: boolean }) {
   const { busy, error, run } = useAction();
+  const extra = restock ? " Their units go back on the In stock page." : "";
   return (
     <>
       <button className="btn sm ghost" disabled={busy} onClick={() => {
-        if (confirm(paid ? "Cancel this order, refund the card in full, and email the buyer?" : "Cancel this buyer’s order? They’ll get an email letting them know.")) run("PATCH", "/api/admin/commitments", { id, action: "cancel" });
+        if (confirm((paid ? "Cancel this order, refund the card in full, and email the buyer?" : "Cancel this buyer’s order? They’ll get an email letting them know.") + extra)) run("PATCH", "/api/admin/commitments", { id, action: "cancel" });
       }}>{paid ? "Cancel + refund" : "Cancel"}</button>
       {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
     </>
@@ -374,7 +375,7 @@ export function ExtrasManager({ id, units, priceCents, bought }: { id: number; u
   return (
     <div className="panel stack" style={{ gap: 12 }}>
       <div className="row"><h3>📦 Extra stock for sale</h3>{units > 0 && priceCents ? <span className="badge good">On sale</span> : <span className="badge neutral">Not on sale</span>}</div>
-      <p className="small muted">{bought ? `You bought ${bought} from the seller. ` : ""}Units left over after the group are sold individually on this GroupBuy’s page.</p>
+      <p className="small muted">{bought ? `You bought ${bought} from the seller. ` : ""}Leftover units are listed on the In stock page automatically, including units from orders you cancel after the deal. Change the count or price here or on the <a href="/admin?tab=stock">In stock tab</a>.</p>
       <div className="form-grid">
         <div className="field"><label>Units left to sell</label><input className="input" type="number" min={0} value={u} onChange={(e) => setU(e.target.value)} /></div>
         <div className="field"><label>Price per unit ($)</label><input className="input" inputMode="decimal" value={p} onChange={(e) => setP(e.target.value)} /></div>
@@ -398,5 +399,62 @@ export function CancelExtraOrder({ id, paid }: { id: number; paid: boolean }) {
       }}>{paid ? "Cancel + refund" : "Cancel"}</button>
       {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
     </>
+  );
+}
+
+/* ---------- In stock tab ---------- */
+
+/** One editable row on the admin In stock tab: units left and price per unit. */
+export function StockRow({ id, units, priceCents, suggestedCents }: { id: number; units: number; priceCents: number | null; suggestedCents: number | null }) {
+  const [u, setU] = useState(String(units));
+  const [p, setP] = useState(dollars(priceCents ?? suggestedCents));
+  const { busy, error, saved, run } = useAction();
+  const changed = u !== String(units) || p !== dollars(priceCents ?? suggestedCents);
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+        <input className="input" style={{ width: 80 }} type="number" min={0} aria-label="Units left" value={u} onChange={(e) => setU(e.target.value)} />
+        <span className="small muted">at $</span>
+        <input className="input" style={{ width: 96 }} inputMode="decimal" aria-label="Price per unit" value={p} onChange={(e) => setP(e.target.value)} />
+        <button className={`btn sm ${changed ? "accent" : "ghost"}`} disabled={busy} onClick={() => run("PATCH", "/api/admin/extras", { campaign_id: id, units: u, price: p })}>Save</button>
+        {units > 0 && (
+          <button className="btn sm ghost" disabled={busy} title="Set units to 0"
+            onClick={() => { if (confirm("Take this off the In stock page? (Sets units left to 0.)")) run("PATCH", "/api/admin/extras", { campaign_id: id, units: 0 }); }}>Remove</button>
+        )}
+        {saved && <span className="badge good">Saved</span>}
+      </div>
+      {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
+    </div>
+  );
+}
+
+/** Put a product straight on the In stock page, without running a GroupBuy. */
+export function NewStockForm() {
+  const router = useRouter();
+  const [f, setF] = useState({ title: "", emoji: "📦", unit: "item", normal: "", price: "", units: "", summary: "" });
+  const [state, setState] = useState<{ busy: boolean; error?: string }>({ busy: false });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  return (
+    <form className="panel stack" style={{ gap: 12 }} onSubmit={async (e) => {
+      e.preventDefault();
+      setState({ busy: true });
+      const r = await api("POST", "/api/admin/stock", f);
+      if (!r.ok) return setState({ busy: false, error: r.error });
+      router.push(`/admin?tab=groupbuys&id=${r.data?.id}`);
+    }}>
+      <h3>+ Add a product to In stock</h3>
+      <p className="small muted">For stock you have on hand that didn’t come from a GroupBuy. It goes on sale right away; you can add a photo and description next.</p>
+      <div className="form-grid">
+        <div className="field" style={{ gridColumn: "1 / -1" }}><label>Product name</label><input className="input" required value={f.title} onChange={set("title")} placeholder="e.g. Dorm mini fridge" /></div>
+        <div className="field"><label>Emoji</label><input className="input" value={f.emoji} onChange={set("emoji")} /></div>
+        <div className="field"><label>Unit name</label><input className="input" value={f.unit} onChange={set("unit")} placeholder="item, pair, case…" /></div>
+        <div className="field"><label>Normal price ($)</label><input className="input" inputMode="decimal" value={f.normal} onChange={set("normal")} placeholder="optional" /></div>
+        <div className="field"><label>Sale price ($)</label><input className="input" inputMode="decimal" required value={f.price} onChange={set("price")} /></div>
+        <div className="field"><label>Units for sale</label><input className="input" type="number" min={1} required value={f.units} onChange={set("units")} /></div>
+        <div className="field"><label>Short description</label><input className="input" value={f.summary} onChange={set("summary")} placeholder="optional" /></div>
+      </div>
+      {state.error && <div className="alert error">{state.error}</div>}
+      <div className="row"><button className="btn accent" disabled={state.busy}>{state.busy ? "Adding…" : "Add to In stock"}</button></div>
+    </form>
   );
 }

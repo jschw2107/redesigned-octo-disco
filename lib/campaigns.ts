@@ -14,7 +14,7 @@ export type Campaign = {
   id: number; number: number; title: string; summary: string; description: string; category: string; emoji: string;
   image_url: string; unit: string; normal_cents: number; target_cents: number; price_options: string; tiers: string;
   goal: number; max_per_buyer: number; fee_cents: number; deadline: string; status: string; final_cents: number | null;
-  pay_by: string | null; deal_note: string; bought_units: number | null; extra_units: number; extra_cents: number | null; request_id: number | null; live_notified: number; created_at: string; sort: number;
+  pay_by: string | null; deal_note: string; bought_units: number | null; extra_units: number; extra_cents: number | null; stock_only: number; request_id: number | null; live_notified: number; created_at: string; sort: number;
 };
 export type CampaignWithStats = Campaign & { units: number; buyers: number; demand_cents: number };
 

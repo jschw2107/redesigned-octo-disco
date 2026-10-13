@@ -6,8 +6,8 @@ import { LocationPicker, emptyLocation, locationComplete, type Uni } from "./Loc
 const usd = (c: number) => (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: c % 100 ? 2 : 0 });
 
 /** "Buy now" for leftover units from a seller's minimum order. */
-export function BuyExtras({ campaign, unit, priceCents, left, groupPriceCents, universities, online }: {
-  campaign: number; unit: string; priceCents: number; left: number; groupPriceCents: number; universities: Uni[]; online: boolean;
+export function BuyExtras({ campaign, unit, priceCents, left, groupPriceCents, universities, online, stockOnly = false }: {
+  campaign: number; unit: string; priceCents: number; left: number; groupPriceCents?: number; universities: Uni[]; online: boolean; stockOnly?: boolean;
 }) {
   const max = Math.min(10, left);
   const [qty, setQty] = useState(1);
@@ -38,8 +38,10 @@ export function BuyExtras({ campaign, unit, priceCents, left, groupPriceCents, u
         <span className={`badge ${left <= 5 ? "warn" : "good"}`}>{left} left</span>
       </div>
       <p className="small muted">
-        The seller required a bigger order than the group needed, so we have a few extra {unit}s. No waiting, no group needed: buy them directly.
-        {" "}(Group members paid {usd(groupPriceCents)}.)
+        {stockOnly
+          ? <>In stock and ready for pickup. No waiting, no group needed: buy directly while they last.</>
+          : <>The seller required a bigger order than the group needed, so we have a few extra {unit}s. No waiting, no group needed: buy them directly.
+            {groupPriceCents ? <>{" "}(Group members paid {usd(groupPriceCents)}.)</> : null}</>}
       </p>
       <div className="row">
         <label>How many?</label>

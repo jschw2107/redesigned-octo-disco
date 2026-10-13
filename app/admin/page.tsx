@@ -10,11 +10,13 @@ import { emailEnabled } from "@/lib/email";
 import { AdminLogin, CampusManager, DeleteWaitlist, IntegrationsPanel, LogoutButton } from "@/components/admin/AdminClient";
 import {
   AnnounceButton, CampaignEditor, CancelCommitment, ImageUploader, UpdateComposer, ExtrasManager, CancelExtraOrder, CopyText, DealPanel, DeleteCampaign, NewCampaignButton, RequestActions,
-  SettingsForm, StatusControl,
+  SettingsForm, StatusControl, StockRow, NewStockForm,
 } from "@/components/admin/Campaigns";
 import { Countdown } from "@/components/Countdown";
 import { AUDIENCES, audienceCounts } from "@/lib/updates";
-import type { ExtraOrder } from "@/lib/extras";
+import { defaultExtraPrice, extrasOnSale, sweepExtraHolds, type ExtraOrder } from "@/lib/extras";
+import type { CampaignWithStats } from "@/lib/campaigns";
+import { siteUrl } from "@/lib/fulfill";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Admin · GroupBuy", robots: { index: false } };
@@ -22,6 +24,7 @@ export const metadata = { title: "Admin · GroupBuy", robots: { index: false } }
 const TABS = [
   ["overview", "Demand"],
   ["groupbuys", "GroupBuys"],
+  ["stock", "In stock"],
   ["buyers", "Buyers"],
   ["requests", "Requests"],
   ["alerts", "Alerts list"],
@@ -66,6 +69,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         )}
         {tab === "overview" && <Overview />}
         {tab === "groupbuys" && (sp.id ? <CampaignDetail id={Number(sp.id)} /> : <CampaignList />)}
+        {tab === "stock" && <StockTab />}
         {tab === "buyers" && <Buyers campaignId={sp.campaign ? Number(sp.campaign) : null} />}
         {tab === "requests" && <Requests />}
         {tab === "alerts" && <Alerts />}
@@ -159,6 +163,62 @@ async function CampaignList() {
   );
 }
 
+async function StockTab() {
+  await sweepExtraHolds(await siteUrl()).catch(() => {});
+  const items = await all<CampaignWithStats & { sold: number; held: number; revenue: number }>(
+    `SELECT c.*, 0 AS units, 0 AS buyers, 0 AS demand_cents,
+       COALESCE((SELECT SUM(qty) FROM extra_orders x WHERE x.campaign_id=c.id AND x.status IN ('paid','reserved')),0) AS sold,
+       COALESCE((SELECT SUM(qty) FROM extra_orders x WHERE x.campaign_id=c.id AND x.status='pending_payment'),0) AS held,
+       COALESCE((SELECT SUM(amount_cents - refunded_cents) FROM extra_orders x WHERE x.campaign_id=c.id AND x.status='paid'),0) AS revenue
+     FROM campaigns c WHERE c.status='deal' ORDER BY (c.extra_units > 0) DESC, c.number DESC`);
+  const suggested = await Promise.all(items.map((c) => defaultExtraPrice(c)));
+  const onSale = items.filter(extrasOnSale);
+  return (
+    <>
+      <div className="admin-h">
+        <h2>In stock</h2><span className="badge">{onSale.length} on sale</span>
+        <div className="spacer" />
+        <Link className="btn ghost sm" href="/in-stock" target="_blank">View In stock page ↗</Link>
+      </div>
+      <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+        Extras are added here automatically: units beyond the group’s order when you lock a deal with a seller minimum, and units from any order you cancel after
+        a deal. Change how many are left or the price at any time; set units to 0 to take something off the site.
+      </p>
+      {items.length === 0 ? (
+        <div className="empty" style={{ marginBottom: 20 }}><p className="muted">Nothing yet. Stock appears here once a GroupBuy’s deal is locked, or add a product below.</p></div>
+      ) : (
+        <div className="table-wrap" style={{ marginBottom: 20 }}>
+          <table>
+            <thead><tr><th>Product</th><th>Status</th><th className="num">Sold</th><th className="num">Revenue</th><th>Units left · price each</th><th /></tr></thead>
+            <tbody>
+              {items.map((c, i) => (
+                <tr key={c.id}>
+                  <td>
+                    <Link href={`/admin?tab=groupbuys&id=${c.id}`}><strong>{c.emoji} {c.title}</strong></Link>
+                    <div className="small muted">
+                      {c.stock_only ? "Added to stock" : `GroupBuy #${code(c.number)} · deal ${usd(c.final_cents)}`}
+                      {c.bought_units && !c.stock_only ? ` · bought ${c.bought_units}` : ""}
+                    </div>
+                  </td>
+                  <td>
+                    {extrasOnSale(c) ? <span className="badge good">On sale</span> : c.extra_units > 0 ? <span className="badge warn">Needs price</span> : <span className="badge neutral">{c.sold > 0 ? "Sold out" : "None left"}</span>}
+                    {c.held > 0 && <div className="small muted">{c.held} in checkout</div>}
+                  </td>
+                  <td className="num">{c.sold}</td>
+                  <td className="num">{usd(c.revenue)}</td>
+                  <td><StockRow key={`${c.extra_units}-${c.extra_cents}`} id={c.id} units={c.extra_units} priceCents={c.extra_cents} suggestedCents={suggested[i]} /></td>
+                  <td className="num"><Link className="btn sm ghost" href={`${campaignPath(c.number)}#buy-now`} target="_blank">View ↗</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <NewStockForm />
+    </>
+  );
+}
+
 async function CampaignDetail({ id }: { id: number }) {
   const c = await getCampaign({ id });
   if (!c) return <div className="empty"><p>GroupBuy not found. <Link href="/admin?tab=groupbuys">Back</Link></p></div>;
@@ -200,7 +260,7 @@ async function CampaignDetail({ id }: { id: number }) {
 
       <div className="split" style={{ alignItems: "start" }}>
         <div className="stack" style={{ gap: 16 }}>
-          <div className="panel stack" style={{ gap: 10 }}>
+          {!c.stock_only && <div className="panel stack" style={{ gap: 10 }}>
             <h3>Demand curve: what to show sellers</h3>
             <div className="table-wrap">
               <table>
@@ -215,9 +275,9 @@ async function CampaignDetail({ id }: { id: number }) {
                 <CopyText text={`We can deliver ${curve.map((r) => `${r.units} ${plural(r.units, c.unit)} at ${usd(r.price)}`).join(", or ")}. What's your best offer?`} />
               </div>
             )}
-          </div>
+          </div>}
           {(c.status === "live" || c.status === "negotiating") && <DealPanel id={c.id} normalCents={c.normal_cents} unit={c.unit} curve={curve} tz={tz} />}
-          {c.status === "deal" && (
+          {c.status === "deal" && !c.stock_only && (
             <div className="panel stack">
               <h3>Deal locked at {usd(c.final_cents)}</h3>
               <p className="small muted">{by.won?.n ?? 0} awaiting payment · {by.paid?.n ?? 0} paid · {by.not_matched?.n ?? 0} above their price{c.pay_by ? ` · pay by ${fmtDate(c.pay_by, tz)}` : ""}</p>
@@ -317,7 +377,7 @@ async function Buyers({ campaignId, embedded = false }: { campaignId: number | n
                     {m.charge_error && m.status === "won" && <div className="small" style={{ color: "var(--bad)" }}>Auto-charge failed: {m.charge_error}</div>}
                   </td>
                   <td className="num">{m.refs || ""}</td>
-                  <td className="num">{!["cancelled", "not_matched", "withdrawn"].includes(m.status) && <CancelCommitment id={m.id} paid={m.status === "paid"} />}</td>
+                  <td className="num">{!["cancelled", "not_matched", "withdrawn"].includes(m.status) && <CancelCommitment id={m.id} paid={m.status === "paid"} restock={m.status === "won" || m.status === "paid"} />}</td>
                 </tr>
               ))}
             </tbody>

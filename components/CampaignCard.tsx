@@ -23,11 +23,11 @@ export function CampaignCard({ c, stock = false }: { c: CampaignWithStats; stock
   const off = c.normal_cents > 0 ? Math.round((1 - price / c.normal_cents) * 100) : 0;
   return (
     <article className="card gb-card">
-      <Link href={campaignPath(c.number) + (stock ? "#buy-now" : "")} className="gb-card-link" aria-label={`GroupBuy #${code(c.number)}: ${c.title}`}>
+      <Link href={campaignPath(c.number) + (stock ? "#buy-now" : "")} className="gb-card-link" aria-label={c.stock_only ? c.title : `GroupBuy #${code(c.number)}: ${c.title}`}>
         <CampaignVisual c={c} />
         <div className="card-body">
           <div className="row" style={{ gap: 8 }}>
-            <span className="tag">GroupBuy #{code(c.number)}</span>
+            <span className="tag">{c.stock_only ? (c.category || "GroupBuy stock") : `GroupBuy #${code(c.number)}`}</span>
             <div className="spacer" />
             {stock ? <span className="badge good">In stock</span> : <StateBadge c={c} />}
           </div>

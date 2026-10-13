@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { all, db, one, run } from "./db";
-import { code, campaignPath, getCampaign, type Campaign } from "./campaigns";
+import { code, campaignPath, getCampaign, getFeeBps, type Campaign } from "./campaigns";
 import { feePerUnit } from "./consent";
 import { sendEmail, extraPaidEmail, extraCancelledEmail } from "./email";
 import { sessionExpiry, stripe } from "./stripe";
@@ -29,6 +29,24 @@ export function extraPrice(dealCents: number, normalCents: number, feeBps: numbe
 export const newExtraCode = () => "GX-" + crypto.randomBytes(6).toString("base64url").toUpperCase().replace(/[^A-Z0-9]/g, "7");
 
 export const getExtraOrder = (c: string) => one<ExtraOrder>("SELECT * FROM extra_orders WHERE code=?", [c]);
+
+/** Default price for leftover units of a locked deal (group's all-in price + standard markup). */
+export async function defaultExtraPrice(c: Pick<Campaign, "final_cents" | "normal_cents">) {
+  if (!c.final_cents) return null;
+  return extraPrice(c.final_cents, c.normal_cents, await getFeeBps(), DEFAULT_MARKUP_BPS);
+}
+
+/**
+ * Puts units back on the In stock page (e.g. a winner's order is cancelled after the deal was bought).
+ * Keeps the admin's price if one is set; otherwise uses the default markup price.
+ */
+export async function addToStock(campaignId: number, qty: number) {
+  const c = await getCampaign({ id: campaignId });
+  if (!c || c.status !== "deal" || qty <= 0) return 0;
+  const price = c.extra_cents ?? (await defaultExtraPrice(c));
+  await run("UPDATE campaigns SET extra_units = extra_units + ?, extra_cents = COALESCE(extra_cents, ?) WHERE id=?", [qty, price, campaignId]);
+  return qty;
+}
 
 export function extrasOnSale(c: Pick<Campaign, "status" | "extra_units" | "extra_cents">) {
   return c.status === "deal" && c.extra_units > 0 && !!c.extra_cents;
