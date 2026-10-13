@@ -151,7 +151,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
             )}
             <div className="promise">
               <strong>Everyone pays the same final price.</strong>
-              <p className="small">Say Jack joins at ≤$200, David at ≤$190, Michael at ≤$180, and a seller offers $175. All three pay $175. Telling us your real price never costs you more.</p>
+              <p className="small">Say Jack joins at ≤$200, David at ≤$190, Michael at ≤$180, and a seller offers $175. All three get the same $175 deal, plus the same GroupBuy fee. Telling us your real price never costs you more.</p>
             </div>
           </aside>
         </div>

@@ -98,7 +98,7 @@ export default async function Home() {
             <div className="promise" style={{ marginTop: 22 }}>
               <strong>Your maximum price decides whether you’re in the deal, not what we charge you.</strong>
               <p className="small">
-                Jack joins at ≤$200, David at ≤$190, Michael at ≤$180. A seller offers $175, so all three pay $175. Nobody is charged more for being honest about what
+                Jack joins at ≤$200, David at ≤$190, Michael at ≤$180. A seller offers $175, so all three get the same $175 deal (plus GroupBuy’s 20% share of what they save). Nobody is charged more for being honest about what
                 they’d pay.
               </p>
             </div>
