@@ -6,6 +6,7 @@ import {
   campaignLiveEmail, commitCancelledEmail, commitPaidEmail, dealChargedEmail, dealMissedEmail, dealWonEmail, sendEmail,
 } from "./email";
 import { chargeSavedCard } from "./cards";
+import { feePerUnit, pct } from "./consent";
 import { paymentsEnabled, stripe } from "./stripe";
 
 /** Public base URL for links in emails and Stripe redirects. Set SITE_URL in production. */
@@ -24,6 +25,7 @@ export type Commitment = {
   status: string; ref: string | null; confirmed_at: string | null; amount_cents: number | null; paid_at: string | null;
   stripe_session_id: string | null; payment_intent: string | null; refunded_cents: number;
   stripe_customer_id: string | null; payment_method_id: string | null; card_label: string | null; setup_session_id: string | null; charge_error: string | null;
+  fee_bps: number | null; fee_amount_cents: number | null;
 };
 
 export const getCommitment = (token: string) => one<Commitment>("SELECT * FROM commitments WHERE token=?", [token]);
@@ -38,11 +40,18 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
   const res = await clearing(camp.id, opts.priceCents, opts.unitCap);
   const now = new Date().toISOString();
   const c = await db();
+  // Each winner pays the clearing price plus GroupBuy's share of their savings, at the rate they agreed to when joining.
+  const winners = res.eligible.length
+    ? await all<{ id: number; qty: number; fee_bps: number | null }>(`SELECT id, qty, fee_bps FROM commitments WHERE id IN (${res.eligible.map(() => "?").join(",")})`, res.eligible)
+    : [];
   await c.batch([
-    ...res.eligible.map((id) => ({
-      sql: "UPDATE commitments SET status='won', amount_cents=qty*?, updated_at=? WHERE id=? AND status='active'",
-      args: [opts.priceCents + camp.fee_cents, now, id],
-    })),
+    ...winners.map((w) => {
+      const fee = feePerUnit(opts.priceCents, camp.normal_cents, w.fee_bps ?? 0);
+      return {
+        sql: "UPDATE commitments SET status='won', amount_cents=?, fee_amount_cents=?, updated_at=? WHERE id=? AND status='active'",
+        args: [w.qty * (opts.priceCents + fee), w.qty * fee, now, w.id],
+      };
+    }),
     ...res.left.map((id) => ({ sql: "UPDATE commitments SET status='not_matched', updated_at=? WHERE id=? AND status='active'", args: [now, id] })),
     {
       sql: "UPDATE campaigns SET status='deal', final_cents=?, pay_by=?, deal_note=? WHERE id=?",
@@ -56,7 +65,8 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
   const missed = await all<Commitment>("SELECT * FROM commitments WHERE campaign_id=? AND status='not_matched'", [camp.id]);
   let charged = 0, failed = 0;
   for (const m of won) {
-    const amount = m.amount_cents ?? m.qty * (opts.priceCents + camp.fee_cents);
+    const unitFee = feePerUnit(opts.priceCents, camp.normal_cents, m.fee_bps ?? 0);
+    const amount = m.amount_cents ?? m.qty * (opts.priceCents + unitFee);
     let chargeError: string | undefined;
     // Saved card: charge automatically, as the buyer authorized when joining.
     if (online && m.payment_method_id) {
@@ -74,7 +84,7 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
     // No saved card, or the charge failed: email a payment link instead.
     await sendEmail(dealWonEmail({
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
-      finalCents: opts.priceCents, feeCents: camp.fee_cents, amountCents: amount,
+      finalCents: opts.priceCents, feeCents: unitFee, feePct: pct(m.fee_bps ?? 0), amountCents: amount,
       normalCents: camp.normal_cents, payBy: fmtDate(opts.payBy, tz), note: opts.note, payUrl: `${opts.base}/c/${m.token}`, online, chargeError,
     }));
   }
@@ -99,7 +109,8 @@ export async function markCommitPaid(token: string, paymentIntent: string | null
   if (auto) {
     await sendEmail(dealChargedEmail({
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
-      finalCents: camp.final_cents ?? 0, feeCents: camp.fee_cents, amountCents: m.amount_cents ?? 0, normalCents: camp.normal_cents,
+      finalCents: camp.final_cents ?? 0, feeCents: feePerUnit(camp.final_cents ?? 0, camp.normal_cents, m.fee_bps ?? 0), feePct: pct(m.fee_bps ?? 0),
+      amountCents: m.amount_cents ?? 0, normalCents: camp.normal_cents,
       card: m.card_label ?? "your saved card", note: camp.deal_note, url: `${base}/c/${m.token}`,
     }));
   } else {

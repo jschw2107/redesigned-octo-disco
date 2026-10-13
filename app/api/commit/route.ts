@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { one, run } from "@/lib/db";
 import { handle, body } from "@/lib/http";
 import { email, location, str } from "@/lib/validate";
-import { code, campaignPath, getCampaign } from "@/lib/campaigns";
+import { code, campaignPath, getCampaign, getFeeBps } from "@/lib/campaigns";
 import { checkDomain, newToken, openCampaign, validChoice } from "@/lib/commit";
 import { commitConfirmEmail, commitJoinedEmail, emailEnabled, sendEmail } from "@/lib/email";
 import { fmtDate, getSettings } from "@/lib/data";
@@ -26,6 +26,7 @@ export const POST = handle(async (req: Request) => {
   const verify = !cards && emailEnabled();
   const now = new Date().toISOString();
   const base = await siteUrl(req);
+  const feeBps = await getFeeBps(); // the rate this buyer agrees to; later changes never apply to them
   const tz = (await getSettings()).timezone;
 
   const existing = await one<Commitment>("SELECT * FROM commitments WHERE campaign_id=? AND email=?", [camp.id, mail]);
@@ -52,15 +53,15 @@ export const POST = handle(async (req: Request) => {
     token = existing.token;
     await run(
       `UPDATE commitments SET name=?, university_id=?, university_name=?, hall_name=?, apartment=?, max_cents=?, qty=?,
-         status=?, updated_at=?, payment_method_id=NULL, card_label=NULL WHERE id=?`,
-      [name, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status, now, existing.id]);
+         status=?, updated_at=?, payment_method_id=NULL, card_label=NULL, fee_bps=? WHERE id=?`,
+      [name, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status, now, feeBps, existing.id]);
   } else {
     token = newToken();
     await run(
       `INSERT INTO commitments (token, campaign_id, created_at, updated_at, name, email, university_id, university_name, hall_name,
-         apartment, max_cents, qty, status, ref, confirmed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         apartment, max_cents, qty, status, ref, confirmed_at, fee_bps) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [token, camp.id, now, now, name, mail, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status,
-        ref && ref !== token ? ref : null, verify ? null : now]);
+        ref && ref !== token ? ref : null, verify ? null : now, feeBps]);
   }
 
   if (cards) {

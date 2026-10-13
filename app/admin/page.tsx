@@ -3,7 +3,7 @@ import { adminConfigured, isAdmin } from "@/lib/auth";
 import { all, databaseIsTemporary, one } from "@/lib/db";
 import { fmtDate, getSettings, getUniversities } from "@/lib/data";
 import {
-  campaignPath, code, demand, demandCurve, getCampaign, getSetting, ladder, listCampaigns, plural, publicState, usd, usdCompact,
+  campaignPath, code, demand, demandCurve, getCampaign, getFeeBps, getSetting, ladder, listCampaigns, plural, publicState, usd, usdCompact,
 } from "@/lib/campaigns";
 import { paymentsEnabled } from "@/lib/stripe";
 import { emailEnabled } from "@/lib/email";
@@ -80,6 +80,10 @@ async function Overview() {
     one<{ n: number }>("SELECT COUNT(*) AS n FROM commitments WHERE status IN ('pending','pending_card')"),
     one<{ n: number }>("SELECT COUNT(*) AS n FROM requests WHERE status='pending'"),
   ]);
+  const fees = await one<{ earned: number; pending: number; gmv: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN status='paid' THEN fee_amount_cents END),0) AS earned,
+            COALESCE(SUM(CASE WHEN status='won' THEN fee_amount_cents END),0) AS pending,
+            COALESCE(SUM(CASE WHEN status='paid' THEN amount_cents END),0) AS gmv FROM commitments`);
   const pitch = `In seven days, we aggregated ${usd(week.dollars, 0)} of committed purchasing demand from ${week.students} students.`;
   const tz = (await getSettings()).timezone;
   const visible = campaigns.filter((c) => c.status !== "cancelled");
@@ -98,6 +102,7 @@ async function Overview() {
         <div className="kpi"><div className="small muted">Students</div><div className="v">{total.students}</div><div className="small muted">{total.edu} with .edu email</div></div>
         <div className="kpi"><div className="small muted">Commitments</div><div className="v">{total.commitments}</div><div className="small muted">{total.units} units</div></div>
         <div className="kpi"><div className="small muted">Started, not finished</div><div className="v">{pending?.n ?? 0}</div><div className="small muted">no card / unconfirmed</div></div>
+        <div className="kpi"><div className="small muted">GroupBuy fees earned</div><div className="v">{usd(fees?.earned ?? 0, 0)}</div><div className="small muted">{usd(fees?.gmv ?? 0, 0)} collected{fees?.pending ? ` · ${usd(fees.pending, 0)} awaiting payment` : ""}</div></div>
         <div className="kpi"><div className="small muted">Requests to review</div><div className="v">{reqs?.n ?? 0}</div><Link className="small" href="/admin?tab=requests">Review →</Link></div>
       </div>
       <p className="small muted">Demand = units × each buyer’s maximum price, counting confirmed commitments only.</p>
@@ -344,7 +349,7 @@ async function Settings() {
   return (
     <>
       <div className="admin-h"><h2>Settings</h2></div>
-      <SettingsForm domains={await getSetting("email_domains")} />
+      <SettingsForm domains={await getSetting("email_domains")} feePct={String((await getFeeBps()) / 100)} />
       <IntegrationsPanel
         payments={paymentsEnabled() ? (process.env.STRIPE_SECRET_KEY!.startsWith("sk_live") ? "live" : "test") : "off"}
         webhook={!!process.env.STRIPE_WEBHOOK_SECRET} email={emailEnabled()}

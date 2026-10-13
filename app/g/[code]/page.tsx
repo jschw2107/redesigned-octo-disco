@@ -9,8 +9,9 @@ import { isAdmin } from "@/lib/auth";
 import { paymentsEnabled } from "@/lib/stripe";
 import { fmtDate, getSettings, getUniversities } from "@/lib/data";
 import {
-  allowedDomains, code, demandCurve, getCampaign, isOpen, ladder, parseOptions, plural, publicState, usd,
+  allowedDomains, code, demandCurve, getCampaign, getFeeBps, isOpen, ladder, parseOptions, plural, publicState, usd,
 } from "@/lib/campaigns";
+import { feePerUnit, pct } from "@/lib/consent";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
   const c = await load((await params).code);
   const sp = await searchParams;
   if (!c) notFound();
-  const [settings, universities, domains, curve] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c)]);
+  const [settings, universities, domains, curve, feeBps] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c), getFeeBps()]);
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
   const l = ladder(c);
   const st = publicState(c);
@@ -77,6 +78,20 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                 {open && <div className="small muted">{fmtDate(c.deadline, tz)}</div>}
               </div>
             </div>
+
+            {feeBps > 0 && (() => {
+              const price = c.status === "deal" && c.final_cents ? c.final_cents : l.current;
+              const fee = feePerUnit(price, c.normal_cents, feeBps);
+              return (
+                <div className="fee-box">
+                  <strong>How GroupBuy makes money: {pct(feeBps)} of what you save, charged with your order.</strong>
+                  <div className="small muted" style={{ marginTop: 4 }}>
+                    At {usd(price)} you save {usd(c.normal_cents - price)} vs the normal price. GroupBuy’s fee is {usd(fee)}, so you pay {usd(price + fee)} and keep {usd(c.normal_cents - price - fee)}.
+                    No savings, no fee.
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="panel stack" style={{ gap: 12 }}>
               <div className="row"><h3>Price tiers</h3><div className="spacer" /><span className="small muted">🎯 {l.next ? `${l.toNext} more to next tier` : "Top tier reached"}</span></div>
@@ -120,7 +135,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                   </div>
                 )}
                 <JoinForm campaign={c.number} title={c.title} unit={c.unit} options={parseOptions(c)} maxPerBuyer={c.max_per_buyer}
-                  feeCents={c.fee_cents} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} cards={paymentsEnabled()} />
+                  feeBps={feeBps} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} cards={paymentsEnabled()} />
               </>
             ) : c.status === "deal" ? (
               <div className="panel stack">

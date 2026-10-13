@@ -4,13 +4,14 @@ import { CampaignCard } from "@/components/CampaignCard";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { getUniversities } from "@/lib/data";
 import { all } from "@/lib/db";
-import { demand, listCampaigns, usd, usdCompact } from "@/lib/campaigns";
+import { demand, getFeeBps, listCampaigns, usd, usdCompact } from "@/lib/campaigns";
+import { pct } from "@/lib/consent";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [campaigns, universities, week, total] = await Promise.all([
-    listCampaigns({ publicOnly: true }), getUniversities(), demand(7), demand(),
+  const [campaigns, universities, week, total, feeBps] = await Promise.all([
+    listCampaigns({ publicOnly: true }), getUniversities(), demand(7), demand(), getFeeBps(),
   ]);
   const requests = await all<{ id: number; title: string; target_cents: number | null; votes: number }>(
     `SELECT r.id, r.title, r.target_cents, (SELECT COUNT(*) FROM request_votes v WHERE v.request_id=r.id) + 1 AS votes
@@ -92,7 +93,7 @@ export default async function Home() {
               <div className="step"><div className="step-num">01</div><h3>Join at your price</h3><p>Pick the most you’d pay: “I’ll buy at $199 or less”, and save a card. Nothing is charged now.</p></div>
               <div className="step"><div className="step-num">02</div><h3>Share to unlock tiers</h3><p>“23 more buyers unlocks the next tier.” Every friend who joins makes the group harder to ignore.</p></div>
               <div className="step"><div className="step-num">03</div><h3>Sellers compete</h3><p>We show retailers and distributors the real demand at each price and ask for their best offer.</p></div>
-              <div className="step"><div className="step-num">04</div><h3>Automatic checkout</h3><p>If the deal lands at or below your price, your card is charged the group’s final price automatically. Everyone pays the same.</p></div>
+              <div className="step"><div className="step-num">04</div><h3>Automatic checkout</h3><p>If the deal lands at or below your price, your card is charged the group’s final price{feeBps > 0 ? ` plus our ${pct(feeBps)} share of what you save` : ""}. Everyone pays the same.</p></div>
             </div>
             <div className="promise" style={{ marginTop: 22 }}>
               <strong>Your maximum price decides whether you’re in the deal, not what we charge you.</strong>
@@ -134,6 +135,7 @@ export default async function Home() {
               <details><summary>Does joining cost anything?</summary><p>No. Joining is free. You save a card securely with Stripe, and it’s charged once, automatically, only if we secure a price at or below your maximum, at the group’s final price.</p></details>
               <details><summary>What if the price isn’t reached?</summary><p>Then you’re not in that deal and your card is never charged. We’ll let you know about the next round.</p></details>
               <details><summary>Why does everyone pay the same price?</summary><p>So it’s always safe to tell us the real most you’d pay. Your maximum only decides whether you’re in; the final price is the same for everyone in the group.</p></details>
+              {feeBps > 0 && <details><summary>How does GroupBuy make money?</summary><p>We keep {pct(feeBps)} of what you save versus the normal price, charged together with your order. If a deal saves you $50, our fee is ${(50 * feeBps / 10000).toFixed(0)} and you keep ${(50 - 50 * feeBps / 10000).toFixed(0)}. No savings, no fee. The fee is always included in the most you could pay, which we show before you join.</p></details>}
               <details><summary>Are the target prices guaranteed?</summary><p>No. Targets and tiers are goals we take to sellers. We only confirm a price once a seller has agreed to it.</p></details>
               <details><summary>Can I change my mind?</summary><p>Yes. Until joining closes you can change your price or withdraw from the link in your email.</p></details>
             </div>

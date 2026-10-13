@@ -4,7 +4,7 @@ import { code, campaignPath, type Campaign } from "./campaigns";
 import { stripe } from "./stripe";
 import type { Commitment } from "./fulfill";
 
-import { chargeConsent } from "./consent";
+import { chargeConsent, unitTotal } from "./consent";
 export { chargeConsent };
 const money = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
 
@@ -30,7 +30,7 @@ export async function startCardSetup(m: Commitment, camp: Campaign, base: string
     client_reference_id: m.token,
     metadata: { kind: "setup", token: m.token },
     setup_intent_data: { metadata: { kind: "setup", token: m.token }, description: `GroupBuy #${code(camp.number)} ${camp.title}` },
-    custom_text: { submit: { message: chargeConsent(camp, m.max_cents, m.qty) } },
+    custom_text: { submit: { message: chargeConsent(camp, m.max_cents, m.qty, m.fee_bps ?? 0) } },
     success_url: `${base}/c/${m.token}?setup_session={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}${campaignPath(camp.number)}?card_cancelled=${m.token}`,
   });
@@ -68,7 +68,8 @@ export type ChargeResult = { ok: true; paymentIntent: string; processing: boolea
 export async function chargeSavedCard(m: Commitment, camp: Campaign, amountCents: number): Promise<ChargeResult> {
   const s = stripe();
   if (!s || !m.payment_method_id || !m.stripe_customer_id) return { ok: false, error: "No saved card" };
-  if (amountCents > (m.max_cents + camp.fee_cents) * m.qty) return { ok: false, error: "Amount exceeds the buyer's authorization" };
+  // Hard cap: never charge more than the buyer authorized (their maximum price plus the agreed fee at that price).
+  if (amountCents > m.qty * unitTotal(m.max_cents, camp.normal_cents, m.fee_bps ?? 0)) return { ok: false, error: "Amount exceeds the buyer's authorization" };
   try {
     const pi = await s.paymentIntents.create({
       amount: amountCents, currency: "usd", customer: m.stripe_customer_id, payment_method: m.payment_method_id,

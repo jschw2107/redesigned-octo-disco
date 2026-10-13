@@ -150,6 +150,12 @@ export async function getSetting(key: string, fallback = "") {
   return r?.value ?? fallback;
 }
 
+/** GroupBuy's share of the savings, in basis points (2000 = 20%). Set in Admin → Settings. */
+export async function getFeeBps() {
+  const v = Number(await getSetting("savings_fee_bps", "2000"));
+  return Number.isInteger(v) && v >= 0 && v <= 10000 ? v : 2000;
+}
+
 /** Optional restriction, e.g. "mail.yu.edu, yu.edu" so only verified school emails can commit. */
 export async function allowedDomains(): Promise<string[]> {
   return (await getSetting("email_domains")).split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);

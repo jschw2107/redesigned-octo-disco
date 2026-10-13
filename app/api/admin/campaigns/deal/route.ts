@@ -4,6 +4,8 @@ import { handle, body } from "@/lib/http";
 import { InputError } from "@/lib/validate";
 import { clearing, getCampaign } from "@/lib/campaigns";
 import { lockDeal, siteUrl } from "@/lib/fulfill";
+import { all } from "@/lib/db";
+import { feePerUnit } from "@/lib/consent";
 
 const priceOf = (v: unknown) => {
   const n = Math.round(Number(String(v ?? "").replace(/[$,\s]/g, "")) * 100);
@@ -25,7 +27,11 @@ export const GET = handle(async (req: Request) => {
   if (!camp) throw new InputError("GroupBuy not found");
   const price = priceOf(u.searchParams.get("price"));
   const r = await clearing(camp.id, price, capOf(u.searchParams.get("cap")));
-  return NextResponse.json({ price, buyers: r.buyers, units: r.units, value: r.value, left: r.left.length,
+  const rows = r.eligible.length
+    ? await all<{ qty: number; fee_bps: number | null }>(`SELECT qty, fee_bps FROM commitments WHERE id IN (${r.eligible.map(() => "?").join(",")})`, r.eligible)
+    : [];
+  const fees = rows.reduce((s, x) => s + x.qty * feePerUnit(price, camp.normal_cents, x.fee_bps ?? 0), 0);
+  return NextResponse.json({ price, buyers: r.buyers, units: r.units, value: r.value, left: r.left.length, fees, charged: r.value + fees,
     savings: Math.max(0, camp.normal_cents - price) * r.units });
 });
 

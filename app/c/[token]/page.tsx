@@ -4,7 +4,7 @@ import { Footer, Header } from "@/components/Header";
 import { CampaignVisual } from "@/components/CampaignCard";
 import { CardButton, CommitEditor, PayButton, RefreshWhilePending } from "@/components/CommitManager";
 import { saveCardFromSession, sendJoinedReceipt } from "@/lib/cards";
-import { chargeConsent } from "@/lib/consent";
+import { chargeConsent, feePerUnit, pct } from "@/lib/consent";
 import { ShareBox } from "@/components/ShareBox";
 import { one, run } from "@/lib/db";
 import { fmtDate, getSettings } from "@/lib/data";
@@ -102,7 +102,7 @@ export default async function CommitmentPage({ params, searchParams }: {
           {m.status === "pending_card" && open && (
             <div className="panel stack">
               <p>You’re not counted yet. Save a card with Stripe to lock in your spot. <strong>Nothing is charged now.</strong></p>
-              <p className="small muted">{chargeConsent(c, m.max_cents, m.qty)}</p>
+              <p className="small muted">{chargeConsent(c, m.max_cents, m.qty, m.fee_bps ?? 0)}</p>
               <CardButton token={token} label="Save card & join" primary />
             </div>
           )}
@@ -118,7 +118,7 @@ export default async function CommitmentPage({ params, searchParams }: {
             <div className="panel stack">
               <p>Sellers competed and the group landed at <strong>{usd(c.final_cents)}</strong> per {c.unit}, at or below your maximum. Everyone in the group pays this same price.</p>
               {m.charge_error && <div className="alert warn small">We couldn’t charge your saved card ({m.charge_error}). Please pay below to keep your spot.</div>}
-              <div className="row"><span>Total{c.fee_cents ? ` (incl. ${usd(c.fee_cents)} GroupBuy fee each)` : ""}</span><div className="spacer" /><strong style={{ fontSize: "1.3rem" }}>{usd(m.amount_cents)}</strong></div>
+              <DealBreakdown qty={m.qty} unit={c.unit} price={c.final_cents ?? 0} normal={c.normal_cents} feeBps={m.fee_bps ?? 0} total={m.amount_cents ?? 0} />
               {c.pay_by && <p className="small muted">Please pay by {fmtDate(c.pay_by, tz)} to keep your spot.</p>}
               {c.deal_note && <p className="small">{c.deal_note}</p>}
               {stripe() ? <PayButton token={token} label={`Pay ${usd(m.amount_cents)}`} /> : <div className="alert info">We’ll email you payment and pickup details.</div>}
@@ -126,6 +126,7 @@ export default async function CommitmentPage({ params, searchParams }: {
           )}
           {m.status === "paid" && (
             <div className="panel stack">
+              <DealBreakdown qty={m.qty} unit={c.unit} price={c.final_cents ?? 0} normal={c.normal_cents} feeBps={m.fee_bps ?? 0} total={m.amount_cents ?? 0} />
               <p>
                 {m.payment_method_id && !m.stripe_session_id && m.card_label ? <>We charged <strong>{usd(m.amount_cents)}</strong> to {m.card_label} automatically, as you authorized.</> : <>We received <strong>{usd(m.amount_cents)}</strong>.</>}{" "}
                 {c.deal_note || "We’ll email you pickup or delivery details."}
@@ -152,10 +153,23 @@ export default async function CommitmentPage({ params, searchParams }: {
           {!open && m.status === "active" && (
             <div className="alert info">Joining has closed and we’re negotiating with sellers. You’ll get an email as soon as there’s a result.</div>
           )}
-          <p className="small muted">Your maximum price only decides whether you’re in. Everyone in the group pays the same final price, never more than their maximum. Keep this link private: it lets you change your commitment.</p>
+          <p className="small muted">Your maximum price only decides whether you’re in. Everyone in the group pays the same final price plus GroupBuy’s share of their savings, never more than the total shown when they joined. Keep this link private: it lets you change your commitment.</p>
         </div>
       </main>
       <Footer />
     </>
+  );
+}
+
+function DealBreakdown({ qty, unit, price, normal, feeBps, total }: { qty: number; unit: string; price: number; normal: number; feeBps: number; total: number }) {
+  const fee = feePerUnit(price, normal, feeBps);
+  const x = qty > 1 ? ` × ${qty}` : "";
+  return (
+    <div className="fee-box small">
+      <div className="row"><span>{unit[0].toUpperCase() + unit.slice(1)} at the group price ({usd(price)}{x})</span><div className="spacer" /><span>{usd(price * qty)}</span></div>
+      {fee > 0 && <div className="row"><span className="muted">GroupBuy fee: {pct(feeBps)} of your {usd((normal - price) * qty)} savings</span><div className="spacer" /><span className="muted">{usd(fee * qty)}</span></div>}
+      <div className="row" style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}><strong>Total</strong><div className="spacer" /><strong style={{ fontSize: "1.15rem" }}>{usd(total)}</strong></div>
+      <div className="muted">You saved {usd(Math.max(0, normal * qty - total))} vs the normal price.</div>
+    </div>
   );
 }

@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LocationPicker, emptyLocation, locationComplete, type Uni } from "./LocationPicker";
 import { ShareBox } from "./ShareBox";
-import { chargeConsent } from "@/lib/consent";
+import { chargeConsent, feePerUnit, pct } from "@/lib/consent";
 
 const usd = (c: number) => (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: c % 100 ? 2 : 0 });
 
 type Props = {
-  campaign: number; title: string; unit: string; options: number[]; maxPerBuyer: number; feeCents: number;
+  campaign: number; title: string; unit: string; options: number[]; maxPerBuyer: number; feeBps: number;
   normalCents: number; universities: Uni[]; domains: string[]; nextTierText: string; cards: boolean;
 };
 
@@ -85,6 +85,18 @@ export function JoinForm(p: Props) {
         <p className="small muted" style={{ marginTop: 10 }}>
           Your price decides <strong>whether</strong> you’re in, not what you pay. If sellers go lower, everyone in the group pays that lower price.
         </p>
+        {p.feeBps > 0 && (() => {
+          const fee = feePerUnit(maxCents, p.normalCents, p.feeBps);
+          const save = Math.max(0, p.normalCents - maxCents);
+          return (
+            <div className="fee-box small">
+              <div className="row" style={{ gap: 6 }}><span>Deal at {usd(maxCents)}</span><div className="spacer" /><span>{usd(maxCents)}</span></div>
+              <div className="row" style={{ gap: 6 }}><span className="muted">GroupBuy fee: {pct(p.feeBps)} of the {usd(save)} you save</span><div className="spacer" /><span className="muted">+{usd(fee)}</span></div>
+              <div className="row" style={{ gap: 6, borderTop: "1px solid var(--line)", paddingTop: 6 }}><strong>Most you’d pay{qty > 1 ? ` (×${qty})` : ""}</strong><div className="spacer" /><strong>{usd((maxCents + fee) * qty)}</strong></div>
+              <div className="muted" style={{ marginTop: 4 }}>You keep {pct(10000 - p.feeBps)} of the savings: {usd((save - fee) * qty)} vs the {usd(p.normalCents)} normal price. A lower deal means you pay less.</div>
+            </div>
+          );
+        })()}
       </fieldset>
 
       {p.maxPerBuyer > 1 && (
@@ -120,12 +132,12 @@ export function JoinForm(p: Props) {
           </div>
           <label className="choice" style={{ alignItems: "flex-start", fontWeight: 400, fontSize: "0.88rem", lineHeight: 1.45 }}>
             <input type="checkbox" required checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 2 }} />
-            <span>{chargeConsent({ title: p.title, fee_cents: p.feeCents, unit: p.unit }, maxCents, qty)}</span>
+            <span>{chargeConsent({ title: p.title, unit: p.unit, normal_cents: p.normalCents }, maxCents, qty, p.feeBps)}</span>
           </label>
         </>
       ) : (
         <div className="alert info small">
-          <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} if GroupBuy secures a price of {usd(maxCents)} or less{p.feeCents ? ` (plus a ${usd(p.feeCents)} GroupBuy fee per ${p.unit})` : ""}. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
+          <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} if GroupBuy secures a price of {usd(maxCents)} or less{p.feeBps ? ` (plus GroupBuy’s ${pct(p.feeBps)} share of your savings)` : ""}. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
         </div>
       )}
       {state.error && <div className="alert error" role="alert">{state.error}</div>}

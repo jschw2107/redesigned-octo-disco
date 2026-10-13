@@ -127,6 +127,9 @@ const COLUMNS: Array<[string, string]> = [
   ["commitments", "card_label TEXT"],
   ["commitments", "setup_session_id TEXT"],
   ["commitments", "charge_error TEXT"],
+  // GroupBuy's savings-share fee: rate agreed at join time (basis points) and the amount charged at deal time
+  ["commitments", "fee_bps INTEGER"],
+  ["commitments", "fee_amount_cents INTEGER"],
 ];
 
 export const UNIVERSITY = "Yeshiva University";

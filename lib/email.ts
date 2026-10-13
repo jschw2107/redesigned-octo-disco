@@ -162,7 +162,7 @@ type CommitInfo = {
   targetCents: number; normalCents: number; deadline: string; manageUrl: string; shareUrl: string;
 };
 const unitText = (qty: number, unit: string) => `${qty} ${qty === 1 ? unit : unit.endsWith("s") ? unit : unit + "s"}`;
-const PROMISE = "Your maximum price only decides whether you're in the deal. Everyone in the group pays the same final price, and you're never charged more than your maximum.";
+const PROMISE = "Your maximum price only decides whether you're in the deal. Everyone in the group pays the same final price plus GroupBuy's share of their savings, and you're never charged more than the total you agreed to when joining.";
 
 export function commitConfirmEmail(c: CommitInfo & { confirmUrl: string }) {
   return {
@@ -192,8 +192,8 @@ export function commitJoinedEmail(c: CommitInfo & { updated: boolean; card?: str
 }
 
 export function dealWonEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
-  feeCents: number; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean; chargeError?: string }) {
-  const saved = (d.normalCents - d.finalCents) * d.qty;
+  feeCents: number; feePct?: string; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean; chargeError?: string }) {
+  const saved = (d.normalCents - d.finalCents - d.feeCents) * d.qty;
   return {
     to: d.email,
     subject: `Deal secured: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
@@ -202,7 +202,7 @@ export function dealWonEmail(d: { email: string; name: string; code: string; tit
       (d.chargeError ? p(`<strong>We couldn't charge your saved card</strong> (${esc(d.chargeError)}). Please pay with the button below to keep your spot.`) : "") +
       details([
         ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
-        ...(d.feeCents ? [["GroupBuy fee", `${money(d.feeCents)} each`] as [string, string]] : []),
+        ...(d.feeCents ? [[`GroupBuy fee (${d.feePct ?? ""} of savings)`, `${money(d.feeCents)} each`] as [string, string]] : []),
         ["Total", money(d.amountCents)], ["You save vs normal price", money(Math.max(0, saved))],
         [d.online ? "Pay by" : "Next step", d.online ? d.payBy : "We'll email payment & pickup details"],
       ]) +
@@ -261,8 +261,8 @@ export function campaignLiveEmail(d: { email: string; code: string; title: strin
 }
 
 export function dealChargedEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
-  feeCents: number; amountCents: number; normalCents: number; card: string; note: string; url: string }) {
-  const saved = Math.max(0, (d.normalCents - d.finalCents) * d.qty);
+  feeCents: number; feePct?: string; amountCents: number; normalCents: number; card: string; note: string; url: string }) {
+  const saved = Math.max(0, (d.normalCents - d.finalCents - d.feeCents) * d.qty);
   return {
     to: d.email,
     subject: `Deal secured and paid: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
@@ -270,7 +270,7 @@ export function dealChargedEmail(d: { email: string; name: string; code: string;
       p(`Hi ${esc(d.name.split(" ")[0])}, GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum, so we charged your saved card automatically, as you authorized. Everyone in the group paid this same price.`) +
       details([
         ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
-        ...(d.feeCents ? [["GroupBuy fee", `${money(d.feeCents)} each`] as [string, string]] : []),
+        ...(d.feeCents ? [[`GroupBuy fee (${d.feePct ?? ""} of savings)`, `${money(d.feeCents)} each`] as [string, string]] : []),
         ["Charged", `${money(d.amountCents)} to ${d.card}`], ["You saved vs normal price", money(saved)],
       ]) +
       (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : p("We'll email you pickup or delivery details.")),

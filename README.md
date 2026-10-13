@@ -9,7 +9,8 @@ GroupBuy aggregates purchase intent *before* the purchase happens, then uses it 
 3. **Admin → GroupBuys → Demand curve** shows how many buyers and units you can deliver at each price. Take that to sellers.
 4. **Lock in a seller's price:** everyone whose maximum is at or above it wins (earliest first if the seller caps units) and **their saved card is charged that one clearing price automatically**. Students save a card when they join (Stripe Checkout in setup mode, with explicit consent to one automatic charge, never above their maximum). If a charge fails, that buyer is emailed a payment link instead. Everyone else is emailed that they weren't charged.
 5. **Requests:** students propose GroupBuys ("Who wants a 65-inch TV under $400?") and others back them. Turn popular ones into live campaigns, and supporters are emailed when it goes live.
-6. **Admin → Demand** shows the headline metric: *"In seven days, we aggregated $X of committed purchasing demand from Y students."*
+6. **Revenue:** GroupBuy keeps a share of each buyer's savings (normal price − deal price), 20% by default (Admin → Settings), charged with the order as a separate line. Each buyer's rate is locked when they join, and their consent shows the most they could pay including the fee.
+7. **Admin → Demand** shows the headline metric: *"In seven days, we aggregated $X of committed purchasing demand from Y students."*
 
 Optional: **Admin → Settings** can restrict joining to school emails (e.g. `mail.yu.edu`).
 

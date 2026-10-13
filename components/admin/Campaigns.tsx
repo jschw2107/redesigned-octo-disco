@@ -36,7 +36,7 @@ export function CampaignEditor({ c, tz }: { c: CampaignRow; tz: string }) {
   const init = {
     title: c.title, summary: c.summary, description: c.description, category: c.category, emoji: c.emoji, image_url: c.image_url, unit: c.unit,
     normal: dollars(c.normal_cents), target: dollars(c.target_cents), options: opts, tiers, goal: String(c.goal), max_per_buyer: String(c.max_per_buyer),
-    fee: dollars(c.fee_cents) || "0", deadline: isoToLocalInput(c.deadline, tz), sort: String(c.sort),
+    deadline: isoToLocalInput(c.deadline, tz), sort: String(c.sort),
   };
   const [f, setF] = useState(init);
   const { busy, error, saved, run } = useAction();
@@ -66,7 +66,6 @@ export function CampaignEditor({ c, tz }: { c: CampaignRow; tz: string }) {
         <div className="field"><label>Buyers (units) needed for target</label><input className="input" type="number" min={1} value={f.goal} onChange={set("goal")} /></div>
         <div className="field"><label>Unit name</label><input className="input" value={f.unit} onChange={set("unit")} placeholder="case, pair, ticket" /></div>
         <div className="field"><label>Max units per buyer</label><input className="input" type="number" min={1} value={f.max_per_buyer} onChange={set("max_per_buyer")} /></div>
-        <div className="field"><label>GroupBuy fee per unit ($)</label><input className="input" inputMode="decimal" value={f.fee} onChange={set("fee")} /></div>
       </div>
       <div className="form-grid">
         <div className="field" style={{ gridColumn: "span 2" }}>
@@ -126,7 +125,7 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
   const [cap, setCap] = useState("");
   const [payBy, setPayBy] = useState(() => isoToLocalInput(new Date(Date.now() + 3 * 86400000).toISOString(), tz));
   const [note, setNote] = useState("");
-  const [preview, setPreview] = useState<{ buyers: number; units: number; value: number; left: number; savings: number } | null>(null);
+  const [preview, setPreview] = useState<{ buyers: number; units: number; value: number; left: number; savings: number; fees: number; charged: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const { busy, error, run, setError } = useAction();
 
@@ -152,8 +151,9 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
         <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pickup Thursday 7–9 PM in the Rubin Hall lobby." /></div>
       {preview && (
         <div className="alert info">
-          At {usd(Math.round(Number(price) * 100))}: <strong>{preview.buyers}</strong> buyers · <strong>{preview.units}</strong> {unit}s · <strong>{usd(preview.value)}</strong> order value ·
-          students save {usd(preview.savings)} vs normal ({usd(normalCents)}). {preview.left > 0 && `${preview.left} won’t be included.`}
+          At {usd(Math.round(Number(price) * 100))}: <strong>{preview.buyers}</strong> buyers · <strong>{preview.units}</strong> {unit}s ·
+          {" "}<strong>{usd(preview.value)}</strong> to the seller + <strong>{usd(preview.fees)}</strong> GroupBuy fees = <strong>{usd(preview.charged)}</strong> charged.
+          {" "}Students save {usd(preview.savings - preview.fees)} net vs normal ({usd(normalCents)}). {preview.left > 0 && `${preview.left} won’t be included.`}
         </div>
       )}
       {error && <div className="alert error">{error}</div>}
@@ -161,7 +161,7 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
       <div><button className="btn accent" disabled={busy || !preview || preview.buyers === 0} onClick={async () => {
         setError(null);
         const iso = localInputToIso(payBy, tz);
-        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} and CHARGE ${preview?.buyers} buyers' saved cards (${usd(preview?.value ?? 0)} total)? This can't be undone.`)) return;
+        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} and CHARGE ${preview?.buyers} buyers' saved cards (${usd(preview?.charged ?? 0)} total, incl. ${usd(preview?.fees ?? 0)} GroupBuy fees)? This can't be undone.`)) return;
         const r = await api("POST", "/api/admin/campaigns/deal", { id, price, cap, pay_by: iso, note });
         if (!r.ok) return setError(r.error ?? "Failed");
         setResult(`Done: charged ${r.data?.charged ?? 0} cards automatically${r.data?.failed ? `, ${r.data.failed} failed (sent a payment link)` : ""}; ${(Number(r.data?.won ?? 0) - Number(r.data?.charged ?? 0) - Number(r.data?.failed ?? 0)) || 0} without a card were emailed a payment link; ${r.data?.missed ?? 0} above the price were told they weren’t charged.`);
@@ -223,11 +223,18 @@ export function CopyText({ text }: { text: string }) {
   return <button className="btn sm ghost" onClick={async () => { try { await navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); } catch {} }}>{ok ? "Copied" : "Copy"}</button>;
 }
 
-export function SettingsForm({ domains }: { domains: string }) {
+export function SettingsForm({ domains, feePct }: { domains: string; feePct: string }) {
   const [d, setD] = useState(domains);
+  const [fee, setFee] = useState(feePct);
   const { busy, error, saved, run } = useAction();
   return (
-    <form className="panel stack" style={{ gap: 12, maxWidth: 720 }} onSubmit={(e) => { e.preventDefault(); run("PATCH", "/api/admin/settings", { email_domains: d }); }}>
+    <form className="panel stack" style={{ gap: 12, maxWidth: 720 }} onSubmit={(e) => { e.preventDefault(); run("PATCH", "/api/admin/settings", { email_domains: d, fee_pct: fee }); }}>
+      <h3>GroupBuy fee</h3>
+      <div className="field">
+        <label>Share of each buyer’s savings GroupBuy keeps (%)</label>
+        <input className="input" inputMode="decimal" style={{ maxWidth: 140 }} value={fee} onChange={(e) => setFee(e.target.value)} />
+        <span className="small muted">Savings = normal price − deal price. Charged with each order. Changes apply to new commitments only: everyone keeps the rate they agreed to when joining.</span>
+      </div>
       <h3>Who can join</h3>
       <div className="field">
         <label>Only allow these email domains <span className="muted">(comma-separated; empty = anyone)</span></label>
@@ -235,7 +242,7 @@ export function SettingsForm({ domains }: { domains: string }) {
         <span className="small muted">Requiring school emails makes your demand numbers “verified students”, which is more convincing to sellers.</span>
       </div>
       {error && <div className="alert error">{error}</div>}
-      <div className="row"><button className="btn accent" disabled={busy || d === domains}>Save</button>{saved && <span className="badge good">Saved</span>}</div>
+      <div className="row"><button className="btn accent" disabled={busy || (d === domains && fee === feePct)}>Save</button>{saved && <span className="badge good">Saved</span>}</div>
     </form>
   );
 }
