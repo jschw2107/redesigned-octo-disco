@@ -25,6 +25,6 @@ export function chargeConsent(camp: { title: string; unit: string; normal_cents:
     ? ` plus GroupBuy's fee of ${pct(feeBps)} of what you save versus the ${money(camp.normal_cents)} normal price`
     : "";
   return `By saving your card, you authorize GroupBuy to charge it once, automatically, if a deal for ${camp.title} is secured at or below ` +
-    `${money(maxCents)} per ${camp.unit}. You'll pay the group's final price${fee}, never more than ${money(cap)} in total. ` +
+    `${money(maxCents)} per ${camp.unit}. You'll pay the group's final price${fee}, even if it's lower than your maximum, and never more than ${money(cap)} in total. ` +
     `You can withdraw any time before joining closes.`;
 }

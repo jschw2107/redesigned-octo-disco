@@ -59,7 +59,7 @@ export function JoinForm(p: Props) {
           <>
             <h3>You’re in 🎉</h3>
             <p className="muted">
-              You’ll buy {qty} {p.unit}{qty > 1 ? "s" : ""} if we secure a price of <strong>{usd(maxCents)} or less</strong>. Nothing is charged now.
+              You’ll buy {qty} {p.unit}{qty > 1 ? "s" : ""} if we secure a price of <strong>{usd(maxCents)} or less</strong>, and you’ll pay the deal price, not your maximum. Nothing is charged now.
               {done.token && <> <a href={`/c/${done.token}`}>View or change your commitment</a>.</>}
             </p>
           </>
@@ -128,7 +128,7 @@ export function JoinForm(p: Props) {
         <>
           <div className="alert info small">
             <strong>Nothing is charged now.</strong> Next you’ll save a card securely with Stripe. If GroupBuy secures a price of {usd(maxCents)} or less,
-            your card is charged automatically at the group’s final price. If not, you’re never charged.
+            your card is charged automatically at the group’s final price, even if that’s well below your maximum. If not, you’re never charged.
           </div>
           <label className="choice" style={{ alignItems: "flex-start", fontWeight: 400, fontSize: "0.88rem", lineHeight: 1.45 }}>
             <input type="checkbox" required checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 2 }} />
@@ -137,7 +137,7 @@ export function JoinForm(p: Props) {
         </>
       ) : (
         <div className="alert info small">
-          <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} if GroupBuy secures a price of {usd(maxCents)} or less{p.feeBps ? ` (plus GroupBuy’s ${pct(p.feeBps)} share of your savings)` : ""}. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
+          <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} if GroupBuy secures a price of {usd(maxCents)} or less{p.feeBps ? ` (plus GroupBuy’s ${pct(p.feeBps)} share of your savings)` : ""}. You’ll pay the group’s final price, never your maximum. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
         </div>
       )}
       {state.error && <div className="alert error" role="alert">{state.error}</div>}

@@ -191,17 +191,24 @@ export function commitJoinedEmail(c: CommitInfo & { updated: boolean; card?: str
   };
 }
 
+/** "You said up to $200, but the deal landed at $175, so you pay $175." */
+function lowerThanMax(maxCents: number | undefined, finalCents: number) {
+  if (!maxCents || maxCents <= finalCents) return "";
+  return p(`You said you'd pay up to ${money(maxCents)}, but you only pay the deal price of <strong>${money(finalCents)}</strong>. Your maximum only decided whether you were in; it never raises what you pay.`);
+}
+
 export function dealWonEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
-  feeCents: number; feePct?: string; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean; chargeError?: string }) {
+  feeCents: number; feePct?: string; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean; chargeError?: string; maxCents?: number }) {
   const saved = (d.normalCents - d.finalCents - d.feeCents) * d.qty;
   return {
     to: d.email,
     subject: `Deal secured: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
     html: layout(`We got the deal: ${money(d.finalCents)}`,
       p(`Hi ${esc(d.name.split(" ")[0])}, sellers competed and GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum. Everyone in the group pays this same price.`) +
+      lowerThanMax(d.maxCents, d.finalCents) +
       (d.chargeError ? p(`<strong>We couldn't charge your saved card</strong> (${esc(d.chargeError)}). Please pay with the button below to keep your spot.`) : "") +
       details([
-        ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
+        ["Your order", unitText(d.qty, d.unit)], ...(d.maxCents && d.maxCents > d.finalCents ? [["Your maximum", `${money(d.maxCents)} each (not charged)`] as [string, string]] : []), ["Price", `${money(d.finalCents)} each`],
         ...(d.feeCents ? [[`GroupBuy fee (${d.feePct ?? ""} of savings)`, `${money(d.feeCents)} each`] as [string, string]] : []),
         ["Total", money(d.amountCents)], ["You save vs normal price", money(Math.max(0, saved))],
         [d.online ? "Pay by" : "Next step", d.online ? d.payBy : "We'll email payment & pickup details"],
@@ -297,15 +304,16 @@ export function campaignLiveEmail(d: { email: string; code: string; title: strin
 }
 
 export function dealChargedEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
-  feeCents: number; feePct?: string; amountCents: number; normalCents: number; card: string; note: string; url: string }) {
+  feeCents: number; feePct?: string; amountCents: number; normalCents: number; card: string; note: string; url: string; maxCents?: number }) {
   const saved = Math.max(0, (d.normalCents - d.finalCents - d.feeCents) * d.qty);
   return {
     to: d.email,
     subject: `Deal secured and paid: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
     html: layout(`You got it for ${money(d.finalCents)} 🎉`,
       p(`Hi ${esc(d.name.split(" ")[0])}, GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum, so we charged your saved card automatically, as you authorized. Everyone in the group paid this same price.`) +
+      lowerThanMax(d.maxCents, d.finalCents) +
       details([
-        ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
+        ["Your order", unitText(d.qty, d.unit)], ...(d.maxCents && d.maxCents > d.finalCents ? [["Your maximum", `${money(d.maxCents)} each (not charged)`] as [string, string]] : []), ["Price", `${money(d.finalCents)} each`],
         ...(d.feeCents ? [[`GroupBuy fee (${d.feePct ?? ""} of savings)`, `${money(d.feeCents)} each`] as [string, string]] : []),
         ["Charged", `${money(d.amountCents)} to ${d.card}`], ["You saved vs normal price", money(saved)],
       ]) +

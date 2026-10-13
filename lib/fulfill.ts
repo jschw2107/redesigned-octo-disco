@@ -94,7 +94,7 @@ export async function lockDeal(opts: {
     await sendEmail(dealWonEmail({
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
       finalCents: opts.priceCents, feeCents: unitFee, feePct: pct(m.fee_bps ?? 0), amountCents: amount,
-      normalCents: camp.normal_cents, payBy: fmtDate(opts.payBy, tz), note: opts.note, payUrl: `${opts.base}/c/${m.token}`, online, chargeError,
+      normalCents: camp.normal_cents, maxCents: m.max_cents, payBy: fmtDate(opts.payBy, tz), note: opts.note, payUrl: `${opts.base}/c/${m.token}`, online, chargeError,
     }));
   }
   for (const m of missed) {
@@ -120,7 +120,7 @@ export async function markCommitPaid(token: string, paymentIntent: string | null
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
       finalCents: camp.final_cents ?? 0, feeCents: feePerUnit(camp.final_cents ?? 0, camp.normal_cents, m.fee_bps ?? 0), feePct: pct(m.fee_bps ?? 0),
       amountCents: m.amount_cents ?? 0, normalCents: camp.normal_cents,
-      card: m.card_label ?? "your saved card", note: camp.deal_note, url: `${base}/c/${m.token}`,
+      card: m.card_label ?? "your saved card", maxCents: m.max_cents, note: camp.deal_note, url: `${base}/c/${m.token}`,
     }));
   } else {
     await sendEmail(commitPaidEmail({
