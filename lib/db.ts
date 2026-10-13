@@ -90,6 +90,8 @@ const SCHEMA = [
      qty INTEGER NOT NULL, unit_cents INTEGER NOT NULL, amount_cents INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending_payment',
      stripe_session_id TEXT, payment_intent TEXT, paid_at TEXT, refunded_cents INTEGER NOT NULL DEFAULT 0)`,
   // Order-update messages the admin sends to a GroupBuy's buyers (also shown on their order pages)
+  // Failed admin sign-ins, for locking out password guessing
+  `CREATE TABLE IF NOT EXISTS login_failures (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS updates (
      id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER NOT NULL, created_at TEXT NOT NULL,
      audience TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0)`,
