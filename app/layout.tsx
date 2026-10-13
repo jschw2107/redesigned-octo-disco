@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "GroupBuy: students set the price, sellers compete",
   description:
     "Join a GroupBuy at the price you'd pay. We bring verified student demand to sellers, they compete for the order, and everyone pays the same final price.",
+  // Google Search Console ownership check: paste the code from Search Console into the GOOGLE_SITE_VERIFICATION
+  // environment variable in Vercel, then redeploy.
+  ...(process.env.GOOGLE_SITE_VERIFICATION ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION.trim() } } : {}),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
