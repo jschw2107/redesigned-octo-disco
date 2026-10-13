@@ -1,14 +1,17 @@
-# GroupBuy: Yeshiva University
+# GroupBuy: a reverse marketplace for students
 
-This is the GroupBuy site rebuilt as a Next.js app with its own backend. It's set up for **Yeshiva University**, with **Rubin Hall, Muss Hall and Morgenstern Hall** plus an **Off-campus apartment** option.
+**Students set the price. Sellers compete. Everyone pays the same.**
 
-- **Group orders with card payment.** Students add essentials, pick their university and residence hall at checkout, and pay by card through **Stripe Checkout**. Apple Pay and Google Pay work where available. An order only counts toward the round once it's paid.
-- **Emails through Resend.** Students get a receipt when they pay, a welcome email when they join the waitlist, and a confirmation when they reserve an item. They're also emailed when an order is cancelled or refunded, and you can send pickup-details emails to everyone in a round. You can optionally get an email for every new order.
-- **Order rounds on your schedule.** In **Admin → Schedule** you set how often the order closes and gets placed (every 1, 2 or 4 weeks, or any number of days) and when the current round closes. The next round opens automatically.
-- **Individual store.** Students reserve leftover units and pay online. Stock is held for 30 minutes while they pay. If they don't finish, it goes back on the shelf.
-- **Admin dashboard** at `/admin`. It has the purchase list, orders with payment status, one-click cancel-and-refund, pickup emails, products and prices, universities and halls, store inventory, and the waitlist. Orders, purchase totals and the waitlist can be downloaded as CSV files.
+GroupBuy aggregates purchase intent *before* the purchase happens, then uses it to negotiate:
 
-Without Stripe or Resend keys, the site still works: orders become "pay at pickup", and emails are printed to the server log. That makes local testing easy.
+1. **Campaigns** ("GroupBuy #001"): a normal price, a starting target, "I'll buy at" price levels ($199 / $189 / $179…) and indicative tiers ("150 buyers → $189").
+2. **Students join at their maximum price.** Nothing is charged. With email on, they confirm via a link, so the counts are verified buyers. Each buyer gets a private link to change or withdraw and a share link that tracks referrals.
+3. **Admin → GroupBuys → Demand curve** shows how many buyers and units you can deliver at each price. Take that to sellers.
+4. **Lock in a seller's price:** everyone whose maximum is at or above it wins (earliest first if the seller caps units) and **pays that one clearing price** through Stripe. Everyone else is emailed that they weren't charged.
+5. **Requests:** students propose GroupBuys ("Who wants a 65-inch TV under $400?") and others back them. Turn popular ones into live campaigns, and supporters are emailed when it goes live.
+6. **Admin → Demand** shows the headline metric: *"In seven days, we aggregated $X of committed purchasing demand from Y students."*
+
+Optional: **Admin → Settings** can restrict joining to school emails (e.g. `mail.yu.edu`).
 
 ## Run it locally
 

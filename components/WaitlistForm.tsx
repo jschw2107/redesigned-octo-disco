@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useCart } from "./CartProvider";
+import { useState } from "react";
 import { LocationPicker, emptyLocation, locationComplete, type Uni } from "./LocationPicker";
 
+/** "Get alerts for new GroupBuys": stored in the waitlist table. */
 export function WaitlistForm({ universities }: { universities: Uni[] }) {
-  const { campus } = useCart();
   const [email, setEmail] = useState("");
-  const [loc, setLoc] = useState(() => emptyLocation(universities, campus));
+  const [loc, setLoc] = useState(() => emptyLocation(universities, null));
   const [state, setState] = useState<{ status: "idle" | "busy" | "done" | "error"; msg?: string }>({ status: "idle" });
-  // The saved campus loads after first render; pre-select it if the student hasn't chosen yet.
-  useEffect(() => {
-    if (campus && universities.some((u) => u.id === campus)) setLoc((l) => (l.university_id === "" ? { ...l, university_id: campus } : l));
-  }, [campus, universities]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +27,7 @@ export function WaitlistForm({ universities }: { universities: Uni[] }) {
     return (
       <div className="panel">
         <h3>You’re on the list 🎉</h3>
-        <p className="muted" style={{ marginTop: 8 }}>We’ll email {email} about launch and your campus’s first drop.</p>
+        <p className="muted" style={{ marginTop: 8 }}>We’ll email {email} when a new GroupBuy opens.</p>
       </div>
     );
   }
@@ -41,13 +36,13 @@ export function WaitlistForm({ universities }: { universities: Uni[] }) {
     <form className="panel stack" style={{ gap: 18 }} onSubmit={submit}>
       <div className="field">
         <label htmlFor="wl-email">Email address</label>
-        <input id="wl-email" className="input" type="email" required autoComplete="email" placeholder="you@school.edu"
+        <input id="wl-email" className="input" type="email" required autoComplete="email" placeholder="you@mail.yu.edu"
           value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
       <LocationPicker universities={universities} value={loc} onChange={setLoc} allowOther compact />
       {state.status === "error" && <div className="alert error" role="alert">{state.msg}</div>}
       <button className="btn accent" disabled={state.status === "busy"}>
-        {state.status === "busy" ? "Joining…" : "Join the waitlist"}
+        {state.status === "busy" ? "Saving…" : "Get alerts for new GroupBuys"}
       </button>
     </form>
   );

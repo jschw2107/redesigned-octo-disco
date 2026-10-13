@@ -1,0 +1,241 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api, useAction } from "./AdminClient";
+import { isoToLocalInput, localInputToIso } from "@/lib/tz";
+
+const usd = (c: number) => (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: c % 100 ? 2 : 0 });
+const dollars = (c: number | null | undefined) => (c == null ? "" : String(c % 100 ? (c / 100).toFixed(2) : c / 100));
+
+export type CampaignRow = {
+  id: number; number: number; title: string; summary: string; description: string; category: string; emoji: string; image_url: string;
+  unit: string; normal_cents: number; target_cents: number; price_options: string; tiers: string; goal: number; max_per_buyer: number;
+  fee_cents: number; deadline: string; status: string; final_cents: number | null; deal_note: string; sort: number;
+};
+
+/* ---------- create ---------- */
+export function NewCampaignButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button className="btn sm accent" disabled={busy} onClick={async () => {
+      setBusy(true);
+      const r = await api("POST", "/api/admin/campaigns", {});
+      setBusy(false);
+      if (r.ok) router.push(`/admin?tab=groupbuys&id=${r.data?.id}`);
+      else alert(r.error);
+    }}>+ New GroupBuy</button>
+  );
+}
+
+/* ---------- edit ---------- */
+export function CampaignEditor({ c, tz }: { c: CampaignRow; tz: string }) {
+  const opts = (() => { try { return (JSON.parse(c.price_options) as number[]).map((x) => dollars(x)).join(", "); } catch { return ""; } })();
+  const tiers = (() => { try { return (JSON.parse(c.tiers) as { units: number; cents: number }[]).map((t) => `${t.units} = ${dollars(t.cents)}`).join("\n"); } catch { return ""; } })();
+  const init = {
+    title: c.title, summary: c.summary, description: c.description, category: c.category, emoji: c.emoji, image_url: c.image_url, unit: c.unit,
+    normal: dollars(c.normal_cents), target: dollars(c.target_cents), options: opts, tiers, goal: String(c.goal), max_per_buyer: String(c.max_per_buyer),
+    fee: dollars(c.fee_cents) || "0", deadline: isoToLocalInput(c.deadline, tz), sort: String(c.sort),
+  };
+  const [f, setF] = useState(init);
+  const { busy, error, saved, run } = useAction();
+  const dirty = JSON.stringify(f) !== JSON.stringify(init);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  const locked = c.status === "deal" || c.status === "closed";
+
+  return (
+    <form className="panel stack" style={{ gap: 16 }} onSubmit={(e) => {
+      e.preventDefault();
+      run("PATCH", "/api/admin/campaigns", { id: c.id, ...f, deadline: localInputToIso(f.deadline, tz) });
+    }}>
+      <div className="row"><h3>Details</h3>{locked && <span className="badge warn">Deal locked: editing prices won’t change it</span>}</div>
+      <div className="form-grid">
+        <div className="field" style={{ gridColumn: "span 2" }}><label>Title</label><input className="input" value={f.title} onChange={set("title")} /></div>
+        <div className="field"><label>Emoji</label><input className="input" value={f.emoji} onChange={set("emoji")} maxLength={8} /></div>
+        <div className="field"><label>Category</label><input className="input" value={f.category} onChange={set("category")} placeholder="Electronics" /></div>
+        <div className="field" style={{ gridColumn: "span 2" }}><label>One-line summary</label><input className="input" value={f.summary} onChange={set("summary")} /></div>
+        <div className="field" style={{ gridColumn: "span 2" }}><label>Image URL <span className="muted">(optional, replaces emoji)</span></label><input className="input" value={f.image_url} onChange={set("image_url")} /></div>
+      </div>
+      <div className="field"><label>Description</label><textarea rows={3} value={f.description} onChange={set("description")} /></div>
+
+      <h3>Pricing & goal</h3>
+      <div className="form-grid">
+        <div className="field"><label>Normal price ($)</label><input className="input" inputMode="decimal" value={f.normal} onChange={set("normal")} /></div>
+        <div className="field"><label>Starting target ($)</label><input className="input" inputMode="decimal" value={f.target} onChange={set("target")} /></div>
+        <div className="field"><label>Buyers (units) needed for target</label><input className="input" type="number" min={1} value={f.goal} onChange={set("goal")} /></div>
+        <div className="field"><label>Unit name</label><input className="input" value={f.unit} onChange={set("unit")} placeholder="case, pair, ticket" /></div>
+        <div className="field"><label>Max units per buyer</label><input className="input" type="number" min={1} value={f.max_per_buyer} onChange={set("max_per_buyer")} /></div>
+        <div className="field"><label>GroupBuy fee per unit ($)</label><input className="input" inputMode="decimal" value={f.fee} onChange={set("fee")} /></div>
+      </div>
+      <div className="form-grid">
+        <div className="field" style={{ gridColumn: "span 2" }}>
+          <label>“I’ll buy at” price options ($, comma-separated)</label>
+          <input className="input" value={f.options} onChange={set("options")} placeholder="199, 189, 179, 169" />
+          <span className="small muted">Students pick one as their maximum. The starting target is always included.</span>
+        </div>
+        <div className="field" style={{ gridColumn: "span 2" }}>
+          <label>Indicative tiers (one per line: buyers = target $)</label>
+          <textarea rows={3} value={f.tiers} onChange={set("tiers")} placeholder={"150 = 189\n300 = 179"} />
+          <span className="small muted">Shown as 🔒 goals (“75 buyers → $185”). Not promises.</span>
+        </div>
+      </div>
+      <div className="form-grid">
+        <div className="field"><label>Joining closes ({tz.replace("_", " ")})</label><input className="input" type="datetime-local" value={f.deadline} onChange={set("deadline")} /></div>
+        <div className="field"><label>Sort order</label><input className="input" type="number" min={0} value={f.sort} onChange={set("sort")} /></div>
+      </div>
+      {error && <div className="alert error">{error}</div>}
+      <div className="row"><button className="btn accent" disabled={!dirty || busy}>{busy ? "Saving…" : "Save"}</button>{saved && <span className="badge good">Saved</span>}</div>
+    </form>
+  );
+}
+
+/* ---------- status ---------- */
+export function StatusControl({ id, status, isDeal }: { id: number; status: string; isDeal: boolean }) {
+  const { busy, error, run } = useAction();
+  const opts = isDeal ? ["deal", "closed", "cancelled"] : ["draft", "live", "negotiating", "closed", "cancelled"];
+  const labels: Record<string, string> = { draft: "Draft (hidden)", live: "Live: taking commitments", negotiating: "Negotiating: joining closed", deal: "Deal locked", closed: "Closed", cancelled: "Cancelled" };
+  return (
+    <div className="row">
+      <select className="sm" style={{ width: "auto" }} value={status} disabled={busy} onChange={(e) => {
+        if (e.target.value === "deal") return;
+        if (e.target.value === "cancelled" && !confirm("Cancel this GroupBuy? It will be hidden from students.")) return;
+        run("PATCH", "/api/admin/campaigns", { id, status: e.target.value });
+      }}>
+        {opts.map((o) => <option key={o} value={o} disabled={o === "deal"}>{labels[o]}</option>)}
+      </select>
+      {error && <span className="small" style={{ color: "var(--bad)" }}>{error}</span>}
+    </div>
+  );
+}
+
+export function DeleteCampaign({ id }: { id: number }) {
+  const router = useRouter();
+  return <button className="btn sm danger" onClick={async () => {
+    if (!confirm("Delete this GroupBuy?")) return;
+    const r = await api("DELETE", "/api/admin/campaigns", { id });
+    if (r.ok) router.push("/admin?tab=groupbuys"); else alert(r.error);
+  }}>Delete</button>;
+}
+
+/* ---------- deal ---------- */
+export function DealPanel({ id, normalCents, unit, curve, tz }: {
+  id: number; normalCents: number; unit: string; curve: { price: number; buyers: number; units: number; value: number }[]; tz: string;
+}) {
+  const [price, setPrice] = useState(curve.length ? dollars(curve[0].price) : "");
+  const [cap, setCap] = useState("");
+  const [payBy, setPayBy] = useState(() => isoToLocalInput(new Date(Date.now() + 3 * 86400000).toISOString(), tz));
+  const [note, setNote] = useState("");
+  const [preview, setPreview] = useState<{ buyers: number; units: number; value: number; left: number; savings: number } | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const { busy, error, run, setError } = useAction();
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      if (!price) return setPreview(null);
+      const r = await api("GET", `/api/admin/campaigns/deal?id=${id}&price=${encodeURIComponent(price)}&cap=${encodeURIComponent(cap)}`);
+      setPreview(r.ok ? (r.data as never) : null);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [price, cap, id]);
+
+  return (
+    <div className="panel stack" style={{ gap: 14 }}>
+      <h3>Lock in a seller’s price</h3>
+      <p className="small muted">Enter the price a seller agreed to. Everyone whose maximum is at or above it gets the deal at that one price (earliest first if you cap units). Everyone else is told they weren’t charged.</p>
+      <div className="form-grid">
+        <div className="field"><label>Seller’s price per {unit} ($)</label><input className="input" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+        <div className="field"><label>Max units the seller can supply <span className="muted">(optional)</span></label><input className="input" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
+        <div className="field"><label>Buyers must pay by</label><input className="input" type="datetime-local" value={payBy} onChange={(e) => setPayBy(e.target.value)} /></div>
+      </div>
+      <div className="field"><label>Message to buyers <span className="muted">(pickup/delivery details, shown in emails)</span></label>
+        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pickup Thursday 7–9 PM in the Rubin Hall lobby." /></div>
+      {preview && (
+        <div className="alert info">
+          At {usd(Math.round(Number(price) * 100))}: <strong>{preview.buyers}</strong> buyers · <strong>{preview.units}</strong> {unit}s · <strong>{usd(preview.value)}</strong> order value ·
+          students save {usd(preview.savings)} vs normal ({usd(normalCents)}). {preview.left > 0 && `${preview.left} won’t be included.`}
+        </div>
+      )}
+      {error && <div className="alert error">{error}</div>}
+      {result && <div className="alert ok">{result}</div>}
+      <div><button className="btn accent" disabled={busy || !preview || preview.buyers === 0} onClick={async () => {
+        setError(null);
+        const iso = localInputToIso(payBy, tz);
+        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} for ${preview?.buyers} buyers and email everyone? This can't be undone.`)) return;
+        const r = await api("POST", "/api/admin/campaigns/deal", { id, price, cap, pay_by: iso, note });
+        if (!r.ok) return setError(r.error ?? "Failed");
+        setResult(`Done: emailed ${r.data?.won} winners and ${r.data?.missed} others.`);
+        await run("PATCH", "/api/admin/campaigns", { id, deal_note: note }); // refreshes the page
+      }}>Lock in deal & email buyers</button></div>
+    </div>
+  );
+}
+
+/* ---------- row actions ---------- */
+export function CancelCommitment({ id, paid }: { id: number; paid: boolean }) {
+  const { busy, error, run } = useAction();
+  return (
+    <>
+      <button className="btn sm ghost" disabled={busy} onClick={() => {
+        if (confirm(paid ? "Cancel this buyer and refund their card in full?" : "Cancel this buyer’s spot?")) run("PATCH", "/api/admin/commitments", { id, action: "cancel" });
+      }}>{paid ? "Cancel + refund" : "Cancel"}</button>
+      {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
+    </>
+  );
+}
+
+export function RequestActions({ id, status }: { id: number; status: string }) {
+  const router = useRouter();
+  const { busy, error, run } = useAction();
+  return (
+    <div className="row" style={{ gap: 6 }}>
+      {status !== "approved" && status !== "converted" && <button className="btn sm" disabled={busy} onClick={() => run("PATCH", "/api/admin/requests", { id, action: "approve" })}>Approve</button>}
+      {status === "approved" && <button className="btn sm ghost" disabled={busy} onClick={() => run("PATCH", "/api/admin/requests", { id, action: "pending" })}>Unpublish</button>}
+      {status !== "converted" && <button className="btn sm accent" disabled={busy} onClick={async () => {
+        const r = await api("PATCH", "/api/admin/requests", { id, action: "convert" });
+        if (r.ok) router.push(`/admin?tab=groupbuys&id=${r.data?.campaign_id}`); else alert(r.error);
+      }}>Turn into GroupBuy</button>}
+      {status !== "rejected" && status !== "converted" && <button className="btn sm ghost" disabled={busy} onClick={() => run("PATCH", "/api/admin/requests", { id, action: "reject" })}>Reject</button>}
+      {error && <span className="small" style={{ color: "var(--bad)" }}>{error}</span>}
+    </div>
+  );
+}
+
+export function AnnounceButton({ id, count }: { id: number; count: number }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <span className="row" style={{ gap: 8 }}>
+      <button className="btn sm ghost" disabled={busy || count === 0} onClick={async () => {
+        if (!confirm(`Email ${count} people on the alerts list about this GroupBuy?`)) return;
+        setBusy(true);
+        const r = await api("POST", "/api/admin/email", { action: "announce", campaign_id: id });
+        setBusy(false);
+        setMsg(r.ok ? `Sent ${r.data?.sent}/${r.data?.total}${r.data?.live ? "" : " (email off: logged only)"}` : r.error ?? "Failed");
+      }}>📣 Email alerts list ({count})</button>
+      {msg && <span className="small muted">{msg}</span>}
+    </span>
+  );
+}
+
+export function CopyText({ text }: { text: string }) {
+  const [ok, setOk] = useState(false);
+  return <button className="btn sm ghost" onClick={async () => { try { await navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); } catch {} }}>{ok ? "Copied" : "Copy"}</button>;
+}
+
+export function SettingsForm({ domains }: { domains: string }) {
+  const [d, setD] = useState(domains);
+  const { busy, error, saved, run } = useAction();
+  return (
+    <form className="panel stack" style={{ gap: 12, maxWidth: 720 }} onSubmit={(e) => { e.preventDefault(); run("PATCH", "/api/admin/settings", { email_domains: d }); }}>
+      <h3>Who can join</h3>
+      <div className="field">
+        <label>Only allow these email domains <span className="muted">(comma-separated; empty = anyone)</span></label>
+        <input className="input" value={d} onChange={(e) => setD(e.target.value)} placeholder="mail.yu.edu, yu.edu" />
+        <span className="small muted">Requiring school emails makes your demand numbers “verified students”, which is more convincing to sellers.</span>
+      </div>
+      {error && <div className="alert error">{error}</div>}
+      <div className="row"><button className="btn accent" disabled={busy || d === domains}>Save</button>{saved && <span className="badge good">Saved</span>}</div>
+    </form>
+  );
+}

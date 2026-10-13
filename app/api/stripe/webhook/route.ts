@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
-import { expireOrder, expireReservation, markOrderPaid, markReservationPaid, siteUrl } from "@/lib/fulfill";
+import { markCommitPaid, siteUrl } from "@/lib/fulfill";
 
 // Stripe → your server. In the Stripe dashboard, add an endpoint for https://YOUR-SITE/api/stripe/webhook
-// with the events checkout.session.completed, checkout.session.async_payment_succeeded,
-// checkout.session.async_payment_failed and checkout.session.expired.
+// with the events checkout.session.completed and checkout.session.async_payment_succeeded.
 export async function POST(req: Request) {
   const s = stripe();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -19,32 +18,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  if (!event.type.startsWith("checkout.session.")) return NextResponse.json({ received: true });
-  const session = event.data.object as Stripe.Checkout.Session;
-  const kind = session.metadata?.kind;
-  const ref = kind === "order" ? session.metadata?.order_id : session.metadata?.code;
-  if (!ref) return NextResponse.json({ received: true });
-  const pi = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
-  const base = await siteUrl(req);
-
-  try {
-    switch (event.type) {
-      case "checkout.session.completed":
-      case "checkout.session.async_payment_succeeded":
-        if (session.payment_status === "paid") {
-          if (kind === "order") await markOrderPaid(ref, pi, base);
-          else await markReservationPaid(ref, pi, base);
-        }
-        break;
-      case "checkout.session.expired":
-      case "checkout.session.async_payment_failed":
-        if (kind === "order") await expireOrder(ref);
-        else await expireReservation(ref);
-        break;
+  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const token = session.metadata?.kind === "commit" ? session.metadata?.token : null;
+    if (token && session.payment_status === "paid") {
+      const pi = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+      try {
+        await markCommitPaid(token, pi, await siteUrl(req));
+      } catch (e) {
+        console.error("[stripe webhook]", e);
+        return NextResponse.json({ error: "Handler failed" }, { status: 500 }); // Stripe will retry
+      }
     }
-  } catch (e) {
-    console.error("[stripe webhook]", e);
-    return NextResponse.json({ error: "Handler failed" }, { status: 500 }); // Stripe will retry
   }
+  // Expired or failed sessions need no action: the buyer keeps their spot and can try paying again.
   return NextResponse.json({ received: true });
 }

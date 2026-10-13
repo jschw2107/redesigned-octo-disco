@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { all } from "@/lib/db";
 import { handle, body } from "@/lib/http";
-import { InputError, email as validEmail, str } from "@/lib/validate";
-import { emailEnabled, pickupReminderEmail, sendEmail } from "@/lib/email";
-import { orderEmailData, siteUrl } from "@/lib/fulfill";
+import { InputError, email as validEmail } from "@/lib/validate";
+import { campaignLiveEmail, emailEnabled, sendEmail } from "@/lib/email";
+import { campaignPath, code, getCampaign } from "@/lib/campaigns";
+import { siteUrl } from "@/lib/fulfill";
 
 export const POST = handle(async (req: Request) => {
   const denied = await requireAdmin(); if (denied) return denied;
@@ -18,16 +19,16 @@ export const POST = handle(async (req: Request) => {
     return NextResponse.json({ ok: true, sent: 1, live: emailEnabled() });
   }
 
-  if (b.action === "pickup_reminder") {
-    const cycle = Number(b.cycle);
-    const note = str(b.note, "Message", { required: false, max: 2000 });
-    const ids = await all<{ id: string }>("SELECT id FROM orders WHERE cycle_id=? AND status='placed'", [cycle]);
+  // Announce a live GroupBuy to everyone on the alerts list.
+  if (b.action === "announce") {
+    const camp = await getCampaign({ id: Number(b.campaign_id) });
+    if (!camp || camp.status !== "live") throw new InputError("Only live GroupBuys can be announced.");
+    const list = await all<{ email: string }>("SELECT DISTINCT lower(email) AS email FROM waitlist");
     let sent = 0;
-    for (const { id } of ids) {
-      const d = await orderEmailData(id, base);
-      if (d && (await sendEmail(pickupReminderEmail({ ...d, note })))) sent++;
+    for (const { email } of list) {
+      if (await sendEmail(campaignLiveEmail({ email, code: code(camp.number), title: camp.title, url: `${base}${campaignPath(camp.number)}`, requested: false }))) sent++;
     }
-    return NextResponse.json({ ok: true, sent, total: ids.length, live: emailEnabled() });
+    return NextResponse.json({ ok: true, sent, total: list.length, live: emailEnabled() });
   }
   throw new InputError("Unknown action");
 });

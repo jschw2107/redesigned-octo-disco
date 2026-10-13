@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { CartProvider } from "@/components/CartProvider";
 
 export const metadata: Metadata = {
-  title: "GroupBuy — Better together. Cheaper together.",
+  title: "GroupBuy: students set the price, sellers compete",
   description:
-    "Buy wholesale with your dorm and save on everyday essentials. Combine your campus buying power and collect what you need at one convenient pickup point.",
+    "Join a GroupBuy at the price you'd pay. We bring verified student demand to sellers, they compete for the order, and everyone pays the same final price.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,9 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Inter:wght@400..700&display=swap"
         />
       </head>
-      <body>
-        <CartProvider>{children}</CartProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

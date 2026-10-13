@@ -1,0 +1,140 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Footer, Header } from "@/components/Header";
+import { CampaignVisual, StateBadge } from "@/components/CampaignCard";
+import { Countdown } from "@/components/Countdown";
+import { JoinForm } from "@/components/JoinForm";
+import { isAdmin } from "@/lib/auth";
+import { fmtDate, getSettings, getUniversities } from "@/lib/data";
+import {
+  allowedDomains, code, demandCurve, getCampaign, isOpen, ladder, parseOptions, plural, publicState, usd,
+} from "@/lib/campaigns";
+
+export const dynamic = "force-dynamic";
+
+async function load(raw: string) {
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return null;
+  const c = await getCampaign({ number: n });
+  if (!c) return null;
+  if (c.status === "draft" && !(await isAdmin())) return null;
+  return c;
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ code: string }> }): Promise<Metadata> {
+  const c = await load((await params).code);
+  if (!c) return { title: "GroupBuy" };
+  const l = ladder(c);
+  return {
+    title: `GroupBuy #${code(c.number)}: ${c.title} at ${usd(l.current)} (normally ${usd(c.normal_cents)})`,
+    description: `${c.units} ${plural(c.units, c.unit)} committed. Join at your price; everyone pays the same final price.`,
+  };
+}
+
+export default async function CampaignPage({ params }: { params: Promise<{ code: string }> }) {
+  const c = await load((await params).code);
+  if (!c) notFound();
+  const [settings, universities, domains, curve] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c)]);
+  const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
+  const l = ladder(c);
+  const st = publicState(c);
+  const open = isOpen(c);
+  const tz = settings.timezone;
+  const unitPl = (n: number) => plural(n, c.unit);
+  const nextTierText = l.next
+    ? `${l.toNext} more ${unitPl(l.toNext)} to ${l.goalReached ? `unlock the ${usd(l.next.cents)} tier` : "hit the goal"}.`
+    : "We've hit the top tier. Every extra buyer adds bargaining power.";
+  const steps = [{ units: c.goal, cents: c.target_cents, base: true }, ...l.tiers.filter((t) => t.units > c.goal).map((t) => ({ ...t, base: false }))];
+
+  return (
+    <>
+      <Header />
+      <main className="container section" style={{ paddingTop: 32 }}>
+        <Link href="/#groupbuys" className="small muted">← All GroupBuys</Link>
+        <div className="split" style={{ marginTop: 16 }}>
+          <div className="stack" style={{ gap: 22 }}>
+            <div className="row" style={{ gap: 10 }}>
+              <span className="tag">GroupBuy #{code(c.number)}{c.category ? ` · ${c.category}` : ""}</span>
+              <StateBadge c={c} />
+            </div>
+            <h1 style={{ fontSize: "clamp(2.2rem, 5vw, 3.4rem)" }}>{c.title}</h1>
+            {c.summary && <p className="lead" style={{ marginTop: 0 }}>{c.summary}</p>}
+            <CampaignVisual c={c} size="hero" />
+
+            <div className="gb-stats">
+              <div><div className="small muted">Normal price</div><div className="gb-stat"><s>{usd(c.normal_cents)}</s></div></div>
+              <div>
+                <div className="small muted">{c.status === "deal" ? "Deal price" : "Current GroupBuy target"}</div>
+                <div className="gb-stat accent">{usd(c.status === "deal" && c.final_cents ? c.final_cents : l.current)}</div>
+              </div>
+              <div><div className="small muted">Committed</div><div className="gb-stat">👥 {c.units} <span className="small muted">{unitPl(c.units)}</span></div></div>
+              <div>
+                <div className="small muted">{open ? "Joining closes" : "Status"}</div>
+                <div className="gb-stat small-stat">{open ? <Countdown to={c.deadline} /> : st.label}</div>
+                {open && <div className="small muted">{fmtDate(c.deadline, tz)}</div>}
+              </div>
+            </div>
+
+            <div className="panel stack" style={{ gap: 12 }}>
+              <div className="row"><h3>Price tiers</h3><div className="spacer" /><span className="small muted">🎯 {l.next ? `${l.toNext} more to next tier` : "Top tier reached"}</span></div>
+              <div className={`progress ${l.goalReached ? "done" : ""}`}><span style={{ width: `${Math.round(l.progress * 100)}%` }} /></div>
+              <ul className="tiers">
+                {steps.map((t) => {
+                  const reached = c.units >= t.units;
+                  return (
+                    <li key={t.units} className={reached ? "reached" : ""}>
+                      <span aria-hidden>{reached ? "✅" : "🔒"}</span>
+                      <span><strong>{t.units} {unitPl(t.units)}</strong> → target {usd(t.cents)}</span>
+                      {t.base && <span className="badge neutral">goal</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="small muted">Tiers are goals we take to sellers, not promises. We only confirm a price once a seller agrees to it.</p>
+            </div>
+
+            {c.description && <p>{c.description}</p>}
+
+            <div className="panel stack" style={{ gap: 10 }}>
+              <h3>Demand so far</h3>
+              <p className="small muted">What we can show sellers right now. Each row counts everyone willing to buy at that price or more.</p>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Price</th><th className="num">Buyers</th><th className="num">{unitPl(2)[0].toUpperCase() + unitPl(2).slice(1)}</th></tr></thead>
+                  <tbody>{curve.map((r) => <tr key={r.price}><td>{usd(r.price)}</td><td className="num">{r.buyers}</td><td className="num">{r.units}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <aside className="stack" style={{ gap: 16, position: "sticky", top: 88 }}>
+            {open ? (
+              <>
+                <h3>Join this GroupBuy</h3>
+                <JoinForm campaign={c.number} title={c.title} unit={c.unit} options={parseOptions(c)} maxPerBuyer={c.max_per_buyer}
+                  feeCents={c.fee_cents} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} />
+              </>
+            ) : c.status === "deal" ? (
+              <div className="panel stack">
+                <h3>Deal secured: {usd(c.final_cents)}</h3>
+                <p className="muted">Everyone who joined at {usd(c.final_cents)} or more is in, and pays {usd(c.final_cents)}. We emailed them a payment link.</p>
+              </div>
+            ) : (
+              <div className="panel stack">
+                <h3>{st.label}</h3>
+                <p className="muted">Joining is closed while we take this group’s demand to sellers. Everyone who joined will hear from us by email.</p>
+                <Link className="btn ghost" href="/requests">Request another GroupBuy</Link>
+              </div>
+            )}
+            <div className="promise">
+              <strong>Everyone pays the same final price.</strong>
+              <p className="small">Say Jack joins at ≤$200, David at ≤$190, Michael at ≤$180, and a seller offers $175. All three pay $175. Telling us your real price never costs you more.</p>
+            </div>
+          </aside>
+        </div>
+      </main>
+      <Footer />
+    </>
+  );
+}

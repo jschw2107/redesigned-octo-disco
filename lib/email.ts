@@ -39,7 +39,7 @@ export async function sendEmail(msg: { to: string | string[]; subject: string; h
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+const money = (c: number) => `$${(c / 100).toFixed(c % 100 === 0 ? 0 : 2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
 function layout(title: string, body: string, cta?: { href: string; label: string }) {
   return `<!doctype html><html><body style="margin:0;background:#faf8f4;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#16131f">
@@ -146,11 +146,115 @@ export function reservationEmail(r: { code: string; name: string; email: string;
 export function waitlistEmail(w: { email: string; university: string; url: string }) {
   return {
     to: w.email,
-    subject: "You're on the GroupBuy waitlist",
+    subject: "You're on the GroupBuy alerts list",
     html: layout("You're on the list 🎉",
-      p(`Thanks for joining the GroupBuy waitlist for <strong>${esc(w.university)}</strong>. We'll email you about launch and the first campus drop.`) +
-      p("Want in sooner? Tell your neighbors. The more students join, the better the deals."),
-      { href: w.url, label: "See the essentials" }),
-    text: `Thanks for joining the GroupBuy waitlist for ${w.university}. We'll email you about launch and the first campus drop.\n${w.url}`,
+      p(`You're on the GroupBuy alerts list for <strong>${esc(w.university)}</strong>. We'll email you whenever a new GroupBuy opens.`) +
+      p("The more students join each GroupBuy, the better the deal we can get."),
+      { href: w.url, label: "See live GroupBuys" }),
+    text: `You're on the GroupBuy alerts list for ${w.university}. We'll email you whenever a new GroupBuy opens.\n${w.url}`,
+  };
+}
+
+/* ---------- reverse-marketplace (GroupBuy campaign) emails ---------- */
+
+type CommitInfo = {
+  email: string; name: string; code: string; title: string; unit: string; qty: number; maxCents: number;
+  targetCents: number; normalCents: number; deadline: string; manageUrl: string; shareUrl: string;
+};
+const unitText = (qty: number, unit: string) => `${qty} ${qty === 1 ? unit : unit.endsWith("s") ? unit : unit + "s"}`;
+const PROMISE = "Your maximum price only decides whether you're in the deal. Everyone in the group pays the same final price, and you're never charged more than your maximum.";
+
+export function commitConfirmEmail(c: CommitInfo & { confirmUrl: string }) {
+  return {
+    to: c.email,
+    subject: `Confirm your spot in GroupBuy #${c.code}: ${c.title}`,
+    html: layout(`Confirm your spot, ${c.name.split(" ")[0]}`,
+      p(`One click and you're counted in <strong>GroupBuy #${esc(c.code)}: ${esc(c.title)}</strong>. Confirming verifies you're a real buyer, which is what gets sellers to compete.`) +
+      details([["You'll buy", unitText(c.qty, c.unit)], ["If the price is", `${money(c.maxCents)} or less`], ["Normal price", money(c.normalCents)], ["Joining closes", c.deadline]]) +
+      p(esc(PROMISE)),
+      { href: c.confirmUrl, label: "Confirm my spot" }),
+    text: `Confirm your spot in GroupBuy #${c.code}: ${c.title}\n${c.confirmUrl}\n\nYou'll buy ${unitText(c.qty, c.unit)} if the price is ${money(c.maxCents)} or less. Joining closes ${c.deadline}.\n${PROMISE}`,
+  };
+}
+
+export function commitJoinedEmail(c: CommitInfo & { updated: boolean }) {
+  return {
+    to: c.email,
+    subject: `${c.updated ? "Updated" : "You're in"}: GroupBuy #${c.code} ${c.title}`,
+    html: layout(c.updated ? "Your commitment was updated" : "You're in the group",
+      p(`You're counted in <strong>GroupBuy #${esc(c.code)}: ${esc(c.title)}</strong>. Nothing is charged now.`) +
+      details([["You'll buy", unitText(c.qty, c.unit)], ["If the price is", `${money(c.maxCents)} or less`], ["Joining closes", c.deadline]]) +
+      p(esc(PROMISE)) +
+      p(`Want a lower price? Share your link. More buyers unlock better deals: <a href="${esc(c.shareUrl)}">${esc(c.shareUrl)}</a>`),
+      { href: c.manageUrl, label: "View or change my commitment" }),
+    text: `You're in GroupBuy #${c.code}: ${c.title}. You'll buy ${unitText(c.qty, c.unit)} if the price is ${money(c.maxCents)} or less. Nothing is charged now.\n${PROMISE}\nShare: ${c.shareUrl}\nManage: ${c.manageUrl}`,
+  };
+}
+
+export function dealWonEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
+  feeCents: number; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean }) {
+  const saved = (d.normalCents - d.finalCents) * d.qty;
+  return {
+    to: d.email,
+    subject: `Deal secured: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
+    html: layout(`We got the deal: ${money(d.finalCents)}`,
+      p(`Hi ${esc(d.name.split(" ")[0])}, sellers competed and GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum. Everyone in the group pays this same price.`) +
+      details([
+        ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
+        ...(d.feeCents ? [["GroupBuy fee", `${money(d.feeCents)} each`] as [string, string]] : []),
+        ["Total", money(d.amountCents)], ["You save vs normal price", money(Math.max(0, saved))],
+        [d.online ? "Pay by" : "Next step", d.online ? d.payBy : "We'll email payment & pickup details"],
+      ]) +
+      (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : ""),
+      { href: d.payUrl, label: d.online ? `Pay ${money(d.amountCents)}` : "View my deal" }),
+    text: `Deal secured: GroupBuy #${d.code} ${d.title} at ${money(d.finalCents)} each.\nYour total: ${money(d.amountCents)} for ${unitText(d.qty, d.unit)}.\n${d.online ? `Pay by ${d.payBy}: ${d.payUrl}` : `Details: ${d.payUrl}`}\n${d.note}`,
+  };
+}
+
+export function dealMissedEmail(d: { email: string; name: string; code: string; title: string; finalCents: number; maxCents: number; url: string }) {
+  return {
+    to: d.email,
+    subject: `GroupBuy #${d.code} closed above your price: you're not charged`,
+    html: layout("This one landed above your price",
+      p(`Hi ${esc(d.name.split(" ")[0])}, GroupBuy #${esc(d.code)}: ${esc(d.title)} closed at ${money(d.finalCents)}, above your maximum of ${money(d.maxCents)}. You're not in this round and you haven't been charged.`) +
+      p("We'll let you know when there's another round, or a deal that hits your price."),
+      { href: d.url, label: "See open GroupBuys" }),
+    text: `GroupBuy #${d.code} ${d.title} closed at ${money(d.finalCents)}, above your max of ${money(d.maxCents)}. You're not charged. ${d.url}`,
+  };
+}
+
+export function commitPaidEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; amountCents: number; note: string; url: string }) {
+  return {
+    to: d.email,
+    subject: `Payment received: GroupBuy #${d.code} ${d.title}`,
+    html: layout("Payment received ✓",
+      p(`Thanks ${esc(d.name.split(" ")[0])}, your payment of <strong>${money(d.amountCents)}</strong> for ${esc(unitText(d.qty, d.unit))} of ${esc(d.title)} is confirmed.`) +
+      (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : p("We'll email you pickup or delivery details.")),
+      { href: d.url, label: "View my order" }),
+    text: `Payment received: ${money(d.amountCents)} for ${unitText(d.qty, d.unit)} of ${d.title} (GroupBuy #${d.code}).\n${d.note}\n${d.url}`,
+  };
+}
+
+export function commitCancelledEmail(d: { email: string; name: string; code: string; title: string; refundedCents: number }) {
+  const refund = d.refundedCents > 0 ? ` We've refunded ${money(d.refundedCents)} to your card; it usually appears within 5–10 business days.` : "";
+  return {
+    to: d.email,
+    subject: `Your GroupBuy #${d.code} order was cancelled`,
+    html: layout("Your order was cancelled", p(`Hi ${esc(d.name.split(" ")[0])}, your spot in GroupBuy #${esc(d.code)}: ${esc(d.title)} was cancelled.${esc(refund)}`)),
+    text: `Your spot in GroupBuy #${d.code} ${d.title} was cancelled.${refund}`,
+  };
+}
+
+export function campaignLiveEmail(d: { email: string; code: string; title: string; url: string; requested?: boolean }) {
+  const requested = d.requested ?? true;
+  return {
+    to: d.email,
+    subject: `${requested ? "It's live" : "New GroupBuy"}: #${d.code} ${d.title}`,
+    html: layout(requested ? "The GroupBuy you asked for is live" : `New GroupBuy: ${d.title}`,
+      p(requested
+        ? `You said you'd join a GroupBuy for <strong>${esc(d.title)}</strong>. It's now open: join at your price and share it to unlock a better deal.`
+        : `GroupBuy #${esc(d.code)}: <strong>${esc(d.title)}</strong> just opened. Join at the price you'd pay. Nothing is charged unless we land a deal at or below it.`),
+      { href: d.url, label: "Join the GroupBuy" }),
+    text: `GroupBuy #${d.code} ${d.title} is live: ${d.url}`,
   };
 }

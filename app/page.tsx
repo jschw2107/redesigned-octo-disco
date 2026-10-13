@@ -1,27 +1,24 @@
-import { Header, Logo } from "@/components/Header";
-import { ProductGrid } from "@/components/ProductGrid";
-import { StoreSection } from "@/components/StoreSection";
+import Link from "next/link";
+import { Footer, Header } from "@/components/Header";
+import { CampaignCard } from "@/components/CampaignCard";
 import { WaitlistForm } from "@/components/WaitlistForm";
-import { Countdown } from "@/components/Countdown";
-import { paymentsEnabled } from "@/lib/stripe";
-import { sweepStaleCheckouts } from "@/lib/fulfill";
-import { currentCycle, fmtDate, getProducts, getSettings, getStoreItems, getUniversities, groupProgress, pickupTime } from "@/lib/data";
+import { getUniversities } from "@/lib/data";
+import { all } from "@/lib/db";
+import { demand, listCampaigns, usd, usdCompact } from "@/lib/campaigns";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ reservation_cancelled?: string }> }) {
-  const sp = await searchParams;
-  await sweepStaleCheckouts().catch((e) => console.error("[sweep]", e));
-  const [settings, cycle] = await Promise.all([getSettings(), currentCycle()]);
-  const [products, universities, storeItems, progress] = await Promise.all([
-    getProducts(), getUniversities(), getStoreItems(), groupProgress(cycle.id),
+export default async function Home() {
+  const [campaigns, universities, week, total] = await Promise.all([
+    listCampaigns({ publicOnly: true }), getUniversities(), demand(7), demand(),
   ]);
+  const requests = await all<{ id: number; title: string; target_cents: number | null; votes: number }>(
+    `SELECT r.id, r.title, r.target_cents, (SELECT COUNT(*) FROM request_votes v WHERE v.request_id=r.id) + 1 AS votes
+     FROM requests r WHERE r.status='approved' ORDER BY votes DESC LIMIT 3`);
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
-  const tz = settings.timezone;
-  // Copy adapts to the campus list: with one school (Yeshiva University today) the page speaks to it directly.
-  const campusName = unis.length === 1 ? unis[0].name : "your campus";
-  const hallNames = unis.length === 1 ? unis[0].halls.map((h) => h.name) : [];
-  const hallsLine = hallNames.length > 1 ? `${hallNames.slice(0, -1).join(", ")} and ${hallNames[hallNames.length - 1]}` : "your dorm";
+  const campus = unis.length === 1 ? unis[0].name : "your campus";
+  const live = campaigns.filter((c) => c.status === "live");
+  const rest = campaigns.filter((c) => c.status !== "live");
 
   return (
     <>
@@ -29,22 +26,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ r
       <main>
         <section className="hero">
           <div className="container">
-            <div className="cycle-pill">
-              <span className={`cycle-dot ${settings.ordering_paused ? "paused" : ""}`} />
-              {settings.ordering_paused ? (
-                <span>Ordering is paused. Join the waitlist for the next drop.</span>
-              ) : (
+            {total.students > 0 && (
+              <div className="cycle-pill">
+                <span className="cycle-dot" />
                 <span>
-                  This round closes <strong>{fmtDate(cycle.closes_at, tz)}</strong> · <Countdown to={cycle.closes_at} />
+                  <strong>{usdCompact(week.students ? week.dollars : total.dollars)}</strong> of purchasing demand committed by{" "}
+                  <strong>{week.students || total.students}</strong> students{week.students ? " this week" : ""}
                 </span>
-              )}
-            </div>
-            <div className="eyebrow">Now launching at {campusName} · Small budget. Big buying power.</div>
-            <h1>Your dorm. Your essentials. <span className="accent-word">Less money.</span></h1>
-            <p className="lead">Wholesale buying power. College-sized budgets. Buy with your neighbors in {hallsLine}, save on everyday essentials, and pick up just what you need on campus.</p>
+              </div>
+            )}
+            <div className="eyebrow">Now live at {campus}</div>
+            <h1>Students set the price. <span className="accent-word">Sellers compete</span> for the order.</h1>
+            <p className="lead">
+              Join a GroupBuy at the price you’d pay. We take the whole group’s demand to sellers, they compete for it, and everyone in the group pays the
+              same final price. Nothing is charged unless we land a price at or below yours.
+            </p>
             <div className="hero-actions">
-              <a className="btn accent" href="#deals">Explore the essentials</a>
-              <a className="btn ghost" href="#how-it-works">How it works</a>
+              <a className="btn accent" href="#groupbuys">See live GroupBuys</a>
+              <Link className="btn ghost" href="/requests">Request a GroupBuy</Link>
             </div>
           </div>
         </section>
@@ -52,69 +51,105 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ r
         <section className="container">
           <div className="power">
             <div>
-              <div className="eyebrow">The power of the group</div>
-              <h2>30 students. One bulk buy.</h2>
-              <p style={{ marginTop: 16, fontSize: "1.1rem" }}>Same drinks. Same dorm. Wholesale buying power for everyone.</p>
-              <p className="power-foot">Buy wholesale. Save together. One pickup.</p>
+              <div className="eyebrow">A reverse marketplace</div>
+              <h2>Imagine 300 students want MacBooks. Who wants that order?</h2>
+              <p style={{ marginTop: 16, fontSize: "1.1rem" }}>
+                Brands spend a fortune convincing shoppers one at a time. We show up with the buyers already lined up, and ask sellers for their best price.
+              </p>
+              <p className="power-foot">Customers find suppliers, not the other way around.</p>
             </div>
             <div className="dots" aria-hidden>{Array.from({ length: 30 }, (_, i) => <span key={i} />)}</div>
           </div>
         </section>
 
-        <section className="section" id="deals">
+        <section className="section" id="groupbuys">
           <div className="container">
-            <div className="eyebrow">The dorm restock, reimagined</div>
-            <h2>Everyday essentials. Not everyday prices.</h2>
-            <p className="lead">
-              Orders from your campus combine into one wholesale purchase each round.{" "}
-              {!settings.ordering_paused && <>This round’s order is placed <strong>{fmtDate(cycle.closes_at, tz)}</strong>, with pickup from <strong>{fmtDate(pickupTime(cycle, settings), tz)}</strong>.</>}
-            </p>
-            <ProductGrid products={products} progress={progress} universities={unis} paused={settings.ordering_paused} />
-          </div>
-        </section>
-
-        <section className="section" id="individual-store" style={{ paddingTop: 0 }}>
-          <div className="container">
-            <div className="eyebrow">Just need one?</div>
-            <h2>Small quantities. Same campus convenience.</h2>
-            <p className="lead" style={{ marginBottom: 32 }}>
-              When a wholesale purchase has more units than students ordered, the extras go on this shelf. Reserve just what you need at a price slightly above the wholesale unit cost.
-            </p>
-            {sp.reservation_cancelled === "1" && (
-              <div className="alert warn" style={{ marginBottom: 18 }}>Payment was cancelled and your card wasn’t charged. The item is back on the shelf.</div>
+            <div className="eyebrow">Live GroupBuys</div>
+            <h2>Join at your price</h2>
+            <p className="lead">Targets are goals we take to sellers. The more students join, the harder sellers compete.</p>
+            {live.length === 0 ? (
+              <div className="empty" style={{ marginTop: 28 }}>
+                <h3>No GroupBuys are open right now</h3>
+                <p className="muted" style={{ marginTop: 6 }}>Get an alert when the next one opens, or propose one.</p>
+              </div>
+            ) : (
+              <div className="grid gb-grid" style={{ marginTop: 28 }}>{live.map((c) => <CampaignCard key={c.id} c={c} />)}</div>
             )}
-            <StoreSection items={storeItems} universities={unis} online={paymentsEnabled()} />
+            {rest.length > 0 && (
+              <>
+                <h3 style={{ marginTop: 40, marginBottom: 14 }}>Closed &amp; negotiating</h3>
+                <div className="grid gb-grid">{rest.map((c) => <CampaignCard key={c.id} c={c} />)}</div>
+              </>
+            )}
           </div>
         </section>
 
         <section className="section" id="how-it-works" style={{ paddingTop: 0 }}>
           <div className="container">
             <div className="eyebrow">How it works</div>
-            <h2>More neighbors. More buying power.</h2>
-            <div className="steps">
-              <div className="step"><div className="step-num">01</div><h3>Pick your essentials</h3><p>Tell us what you need. Your detergent, drinks, snacks, and toiletries join the same order as your neighbors’ essentials.</p></div>
-              <div className="step"><div className="step-num">02</div><h3>Buy wholesale together</h3><p>Your campus’s orders combine into one wholesale purchase. Buying together means lower prices, without buying or storing a warehouse-sized stash.</p></div>
-              <div className="step"><div className="step-num">03</div><h3>Grab it on campus</h3><p>One convenient pickup point. We share the time and place before each drop, so you can get stocked and get back to your day.</p></div>
+            <h2>More buyers. More bargaining power.</h2>
+            <div className="steps four">
+              <div className="step"><div className="step-num">01</div><h3>Join at your price</h3><p>Pick the most you’d pay: “I’ll buy at $199 or less.” It’s free to join and nothing is charged.</p></div>
+              <div className="step"><div className="step-num">02</div><h3>Share to unlock tiers</h3><p>“23 more buyers unlocks the next tier.” Every friend who joins makes the group harder to ignore.</p></div>
+              <div className="step"><div className="step-num">03</div><h3>Sellers compete</h3><p>We show retailers and distributors the real demand at each price and ask for their best offer.</p></div>
+              <div className="step"><div className="step-num">04</div><h3>Everyone pays one price</h3><p>Everyone whose price is at or above the deal gets it, and everyone pays the same final price.</p></div>
+            </div>
+            <div className="promise" style={{ marginTop: 22 }}>
+              <strong>Your target price decides whether you’re in the deal, not what we charge you.</strong>
+              <p className="small">
+                Jack joins at ≤$200, David at ≤$190, Michael at ≤$180. A seller offers $175, so all three pay $175. Nobody is charged more for being honest about what
+                they’d pay.
+              </p>
             </div>
           </div>
         </section>
 
-        <section className="container" id="waitlist">
+        <section className="section" style={{ paddingTop: 0 }}>
+          <div className="container">
+            <div className="split">
+              <div>
+                <div className="eyebrow">Start your own</div>
+                <h2>What should the group buy next?</h2>
+                <p className="lead">“Who wants AirPods under $100?” “Who’d switch gyms for under $30 a month?” Propose it, rally your friends, and we’ll take it to sellers.</p>
+                <Link className="btn accent" href="/requests" style={{ marginTop: 22 }}>Request a GroupBuy</Link>
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                {requests.map((r) => (
+                  <Link key={r.id} href="/requests" className="panel row" style={{ padding: 16, textDecoration: "none" }}>
+                    <span>Who wants {r.title}{r.target_cents ? ` under ${usd(r.target_cents)}` : ""}?</span>
+                    <div className="spacer" />
+                    <span className="badge">👋 {r.votes}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="section" style={{ paddingTop: 0 }}>
+          <div className="container">
+            <div className="eyebrow">Questions</div>
+            <h2>Good to know</h2>
+            <div className="faq">
+              <details><summary>Does joining cost anything?</summary><p>No. Joining is free and nothing is charged. If we secure a price at or below your maximum, we email you a link to pay.</p></details>
+              <details><summary>What if the price isn’t reached?</summary><p>Then you’re not in that deal and you aren’t charged. We’ll let you know about the next round.</p></details>
+              <details><summary>Why does everyone pay the same price?</summary><p>So it’s always safe to tell us the real most you’d pay. Your maximum only decides whether you’re in; the final price is the same for everyone in the group.</p></details>
+              <details><summary>Are the target prices guaranteed?</summary><p>No. Targets and tiers are goals we take to sellers. We only confirm a price once a seller has agreed to it.</p></details>
+              <details><summary>Can I change my mind?</summary><p>Yes. Until joining closes you can change your price or withdraw from the link in your email.</p></details>
+            </div>
+          </div>
+        </section>
+
+        <section className="container" id="alerts">
           <div className="waitlist">
-            <div className="eyebrow">Join the waitlist</div>
-            <h2>Bring the bulk-buy club to {unis.length === 1 ? unis[0].name : "your dorm"}.</h2>
-            <p className="lead">Join the waitlist for launch updates and the first campus drops. No payment now. Just better buying, together.</p>
+            <div className="eyebrow">Never miss a GroupBuy</div>
+            <h2>Get alerts for new GroupBuys</h2>
+            <p className="lead">We’ll email you when a new GroupBuy opens at {campus}.</p>
             <WaitlistForm universities={unis} />
           </div>
         </section>
       </main>
-      <footer className="footer">
-        <div className="container row">
-          <Logo />
-          <div className="spacer" />
-          <span>Built for your budget. Better with your neighbors.</span>
-        </div>
-      </footer>
+      <Footer />
     </>
   );
 }

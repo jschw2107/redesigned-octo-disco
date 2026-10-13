@@ -57,6 +57,31 @@ const SCHEMA = [
      university_name TEXT NOT NULL, hall_name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'reserved')`,
   `CREATE INDEX IF NOT EXISTS idx_orders_cycle ON orders(cycle_id)`,
   `CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id)`,
+  // ---- Reverse marketplace: campaigns ("GroupBuys"), commitments, student requests ----
+  `CREATE TABLE IF NOT EXISTS campaigns (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, number INTEGER NOT NULL UNIQUE, title TEXT NOT NULL,
+     summary TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '',
+     emoji TEXT NOT NULL DEFAULT '🛍️', image_url TEXT NOT NULL DEFAULT '', unit TEXT NOT NULL DEFAULT 'item',
+     normal_cents INTEGER NOT NULL, target_cents INTEGER NOT NULL,
+     price_options TEXT NOT NULL DEFAULT '[]', tiers TEXT NOT NULL DEFAULT '[]',
+     goal INTEGER NOT NULL DEFAULT 100, max_per_buyer INTEGER NOT NULL DEFAULT 1, fee_cents INTEGER NOT NULL DEFAULT 0,
+     deadline TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+     final_cents INTEGER, pay_by TEXT, deal_note TEXT NOT NULL DEFAULT '', request_id INTEGER, live_notified INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS commitments (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, campaign_id INTEGER NOT NULL REFERENCES campaigns(id),
+     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL,
+     university_id INTEGER, university_name TEXT NOT NULL DEFAULT '', hall_name TEXT NOT NULL DEFAULT '', apartment TEXT NOT NULL DEFAULT '',
+     max_cents INTEGER NOT NULL, qty INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'active',
+     ref TEXT, confirmed_at TEXT, amount_cents INTEGER, paid_at TEXT, stripe_session_id TEXT, payment_intent TEXT,
+     refunded_cents INTEGER NOT NULL DEFAULT 0, UNIQUE(campaign_id, email))`,
+  `CREATE INDEX IF NOT EXISTS idx_commit_campaign ON commitments(campaign_id, status)`,
+  `CREATE TABLE IF NOT EXISTS requests (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '',
+     target_cents INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', campaign_id INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS request_votes (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+     email TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(request_id, email))`,
 ];
 
 const IMG = (id: string) => `https://framerusercontent.com/images/${id}.jpg`;
@@ -129,10 +154,48 @@ async function migrate(c: Client) {
   await c.execute("INSERT OR REPLACE INTO settings VALUES ('migrated_yu', '1')");
 }
 
+// Illustrative launch campaigns. Prices are targets to test demand, not negotiated deals; edit them in Admin → GroupBuys.
+type Seed = { title: string; summary: string; description: string; category: string; emoji: string; unit: string;
+  normal: number; target: number; options: number[]; tiers: [number, number][]; goal: number; max: number; days: number };
+const SEED_CAMPAIGNS: Seed[] = [
+  { title: "Celsius energy drinks", summary: "24-can case, assorted flavors", category: "Food & drink", emoji: "⚡", unit: "case",
+    description: "A case of 24 Celsius cans delivered to campus. Flavors confirmed with the supplier once the deal is set.",
+    normal: 5000, target: 3900, options: [3900, 3700, 3500, 3300], tiers: [[150, 3700], [250, 3500]], goal: 100, max: 4, days: 5 },
+  { title: "AirPods Pro", summary: "Latest model, sealed, US warranty", category: "Electronics", emoji: "🎧", unit: "pair",
+    description: "New, sealed AirPods Pro from an authorized seller, with full US warranty.",
+    normal: 24900, target: 19900, options: [19900, 18900, 17900, 16900], tiers: [[150, 18900], [300, 17900]], goal: 100, max: 1, days: 10 },
+  { title: "Dorm mini fridge", summary: "3.1 cu ft with freezer compartment", category: "Dorm", emoji: "🧊", unit: "fridge",
+    description: "A compact 3.1 cu ft fridge sized for dorm rooms, delivered to your residence hall.",
+    normal: 18000, target: 13500, options: [13500, 12900, 11900], tiers: [[75, 12900], [120, 11900]], goal: 50, max: 1, days: 10 },
+  { title: "Laundry detergent", summary: "Large bottle, about 100 loads", category: "Household", emoji: "🧺", unit: "bottle",
+    description: "A big bottle of name-brand laundry detergent, enough for a semester.",
+    normal: 2200, target: 1700, options: [1700, 1600, 1500], tiers: [[100, 1600], [200, 1500]], goal: 50, max: 3, days: 5 },
+  { title: "Pesach flights: New York ⇄ Tel Aviv", summary: "Round trip around Pesach break", category: "Travel", emoji: "✈️", unit: "ticket",
+    description: "Interest check: if enough students want to fly around the same dates, we take the group to airlines and travel agencies and ask them to compete.",
+    normal: 110000, target: 89900, options: [89900, 84900, 79900], tiers: [[200, 84900], [400, 79900]], goal: 100, max: 1, days: 21 },
+];
+
+async function seedCampaigns(c: Client) {
+  const done = await c.execute("SELECT 1 FROM settings WHERE key='seeded_campaigns'");
+  if (done.rows.length) return;
+  const now = Date.now();
+  await c.batch([
+    ...SEED_CAMPAIGNS.map((s, i) => ({
+      sql: `INSERT OR IGNORE INTO campaigns (number, title, summary, description, category, emoji, unit, normal_cents, target_cents,
+              price_options, tiers, goal, max_per_buyer, deadline, status, created_at, sort) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [i + 1, s.title, s.summary, s.description, s.category, s.emoji, s.unit, s.normal, s.target, JSON.stringify(s.options),
+        JSON.stringify(s.tiers.map(([units, cents]) => ({ units, cents }))), s.goal, s.max,
+        new Date(now + s.days * 86400000).toISOString(), "live", new Date(now).toISOString(), i],
+    })),
+    { sql: "INSERT OR REPLACE INTO settings VALUES ('seeded_campaigns', '1')", args: [] },
+  ], "write");
+}
+
 async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
   await c.batch(SCHEMA, "write");
   await migrate(c);
+  await seedCampaigns(c);
   const seeded = await c.execute("SELECT value FROM settings WHERE key='seeded'");
   if (seeded.rows.length) return;
 
