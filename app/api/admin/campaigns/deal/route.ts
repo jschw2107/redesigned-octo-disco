@@ -44,5 +44,5 @@ export const POST = handle(async (req: Request) => {
     note: String(b.note ?? "").slice(0, 2000), base: await siteUrl(req),
   });
   if (r.buyers === 0) return NextResponse.json({ ok: true, warning: "Nobody qualified at that price.", ...r });
-  return NextResponse.json({ ok: true, won: r.won, missed: r.missed, units: r.units, value: r.value });
+  return NextResponse.json({ ok: true, won: r.won, missed: r.missed, charged: r.charged, failed: r.failed, units: r.units, value: r.value });
 });

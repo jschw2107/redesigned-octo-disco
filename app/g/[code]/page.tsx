@@ -6,6 +6,7 @@ import { CampaignVisual, StateBadge } from "@/components/CampaignCard";
 import { Countdown } from "@/components/Countdown";
 import { JoinForm } from "@/components/JoinForm";
 import { isAdmin } from "@/lib/auth";
+import { paymentsEnabled } from "@/lib/stripe";
 import { fmtDate, getSettings, getUniversities } from "@/lib/data";
 import {
   allowedDomains, code, demandCurve, getCampaign, isOpen, ladder, parseOptions, plural, publicState, usd,
@@ -32,8 +33,9 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   };
 }
 
-export default async function CampaignPage({ params }: { params: Promise<{ code: string }> }) {
+export default async function CampaignPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ card_cancelled?: string }> }) {
   const c = await load((await params).code);
+  const sp = await searchParams;
   if (!c) notFound();
   const [settings, universities, domains, curve] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c)]);
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
@@ -112,13 +114,18 @@ export default async function CampaignPage({ params }: { params: Promise<{ code:
             {open ? (
               <>
                 <h3>Join this GroupBuy</h3>
+                {sp.card_cancelled && (
+                  <div className="alert warn small">
+                    Your spot isn’t saved until you add a card. You weren’t charged. <Link href={`/c/${encodeURIComponent(sp.card_cancelled)}`}>Finish joining →</Link>
+                  </div>
+                )}
                 <JoinForm campaign={c.number} title={c.title} unit={c.unit} options={parseOptions(c)} maxPerBuyer={c.max_per_buyer}
-                  feeCents={c.fee_cents} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} />
+                  feeCents={c.fee_cents} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} cards={paymentsEnabled()} />
               </>
             ) : c.status === "deal" ? (
               <div className="panel stack">
                 <h3>Deal secured: {usd(c.final_cents)}</h3>
-                <p className="muted">Everyone who joined at {usd(c.final_cents)} or more is in, and pays {usd(c.final_cents)}. We emailed them a payment link.</p>
+                <p className="muted">Everyone who joined at {usd(c.final_cents)} or more is in, and pays {usd(c.final_cents)}. Saved cards were charged automatically.</p>
               </div>
             ) : (
               <div className="panel stack">

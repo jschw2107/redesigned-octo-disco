@@ -5,12 +5,13 @@ import { InputError } from "@/lib/validate";
 import { getCampaign, isOpen } from "@/lib/campaigns";
 import { validChoice } from "@/lib/commit";
 import { getCommitment } from "@/lib/fulfill";
+import { paymentsEnabled } from "@/lib/stripe";
 
 async function load(token: string) {
   const m = await getCommitment(token);
   if (!m) throw new InputError("Commitment not found");
   const camp = (await getCampaign({ id: m.campaign_id }))!;
-  if (!isOpen(camp) || !["active", "pending", "withdrawn"].includes(m.status)) {
+  if (!isOpen(camp) || !["active", "pending", "withdrawn", "pending_card"].includes(m.status)) {
     throw new InputError("This commitment can't be changed anymore: the GroupBuy has closed.");
   }
   return { m, camp };
@@ -22,7 +23,9 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ token:
   const { m, camp } = await load(token);
   const b = await body(req);
   const { max, qty } = validChoice(camp, b.max_cents ?? m.max_cents, b.qty ?? m.qty);
-  const status = m.status === "withdrawn" ? "active" : m.status === "pending" ? "active" : m.status; // the private link proves the email
+  // The private link proves the email. With payments on, a commitment only counts once a card is saved.
+  const needsCard = paymentsEnabled() && !m.payment_method_id;
+  const status = m.status === "withdrawn" || m.status === "pending" ? (needsCard ? "pending_card" : "active") : m.status;
   await run("UPDATE commitments SET max_cents=?, qty=?, status=?, confirmed_at=COALESCE(confirmed_at, ?), updated_at=? WHERE id=?",
     [max, qty, status, new Date().toISOString(), new Date().toISOString(), m.id]);
   return NextResponse.json({ ok: true });

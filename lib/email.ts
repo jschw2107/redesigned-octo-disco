@@ -177,12 +177,12 @@ export function commitConfirmEmail(c: CommitInfo & { confirmUrl: string }) {
   };
 }
 
-export function commitJoinedEmail(c: CommitInfo & { updated: boolean }) {
+export function commitJoinedEmail(c: CommitInfo & { updated: boolean; card?: string | null }) {
   return {
     to: c.email,
     subject: `${c.updated ? "Updated" : "You're in"}: GroupBuy #${c.code} ${c.title}`,
     html: layout(c.updated ? "Your commitment was updated" : "You're in the group",
-      p(`You're counted in <strong>GroupBuy #${esc(c.code)}: ${esc(c.title)}</strong>. Nothing is charged now.`) +
+      p(`You're counted in <strong>GroupBuy #${esc(c.code)}: ${esc(c.title)}</strong>. Nothing is charged now${c.card ? `. If a deal lands at or below your maximum, we'll charge ${esc(c.card)} automatically, once, at the group's final price` : ""}.`) +
       details([["You'll buy", unitText(c.qty, c.unit)], ["If the price is", `${money(c.maxCents)} or less`], ["Joining closes", c.deadline]]) +
       p(esc(PROMISE)) +
       p(`Want a lower price? Share your link. More buyers unlock better deals: <a href="${esc(c.shareUrl)}">${esc(c.shareUrl)}</a>`),
@@ -192,13 +192,14 @@ export function commitJoinedEmail(c: CommitInfo & { updated: boolean }) {
 }
 
 export function dealWonEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
-  feeCents: number; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean }) {
+  feeCents: number; amountCents: number; normalCents: number; payBy: string; note: string; payUrl: string; online: boolean; chargeError?: string }) {
   const saved = (d.normalCents - d.finalCents) * d.qty;
   return {
     to: d.email,
     subject: `Deal secured: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
     html: layout(`We got the deal: ${money(d.finalCents)}`,
       p(`Hi ${esc(d.name.split(" ")[0])}, sellers competed and GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum. Everyone in the group pays this same price.`) +
+      (d.chargeError ? p(`<strong>We couldn't charge your saved card</strong> (${esc(d.chargeError)}). Please pay with the button below to keep your spot.`) : "") +
       details([
         ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
         ...(d.feeCents ? [["GroupBuy fee", `${money(d.feeCents)} each`] as [string, string]] : []),
@@ -256,5 +257,24 @@ export function campaignLiveEmail(d: { email: string; code: string; title: strin
         : `GroupBuy #${esc(d.code)}: <strong>${esc(d.title)}</strong> just opened. Join at the price you'd pay. Nothing is charged unless we land a deal at or below it.`),
       { href: d.url, label: "Join the GroupBuy" }),
     text: `GroupBuy #${d.code} ${d.title} is live: ${d.url}`,
+  };
+}
+
+export function dealChargedEmail(d: { email: string; name: string; code: string; title: string; unit: string; qty: number; finalCents: number;
+  feeCents: number; amountCents: number; normalCents: number; card: string; note: string; url: string }) {
+  const saved = Math.max(0, (d.normalCents - d.finalCents) * d.qty);
+  return {
+    to: d.email,
+    subject: `Deal secured and paid: ${d.title} at ${money(d.finalCents)} (GroupBuy #${d.code})`,
+    html: layout(`You got it for ${money(d.finalCents)} 🎉`,
+      p(`Hi ${esc(d.name.split(" ")[0])}, GroupBuy #${esc(d.code)} landed at <strong>${money(d.finalCents)}</strong> per ${esc(d.unit)}, at or below your maximum, so we charged your saved card automatically, as you authorized. Everyone in the group paid this same price.`) +
+      details([
+        ["Your order", unitText(d.qty, d.unit)], ["Price", `${money(d.finalCents)} each`],
+        ...(d.feeCents ? [["GroupBuy fee", `${money(d.feeCents)} each`] as [string, string]] : []),
+        ["Charged", `${money(d.amountCents)} to ${d.card}`], ["You saved vs normal price", money(saved)],
+      ]) +
+      (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : p("We'll email you pickup or delivery details.")),
+      { href: d.url, label: "View my order" }),
+    text: `GroupBuy #${d.code} ${d.title} landed at ${money(d.finalCents)}. We charged ${money(d.amountCents)} to ${d.card} for ${unitText(d.qty, d.unit)}.\n${d.note}\n${d.url}`,
   };
 }

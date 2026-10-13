@@ -121,6 +121,12 @@ const COLUMNS: Array<[string, string]> = [
   ["reservations", "payment_intent TEXT"],
   ["reservations", "paid_at TEXT"],
   ["reservations", "refunded_cents INTEGER NOT NULL DEFAULT 0"],
+  // Saved card for automatic charging when a deal is locked
+  ["commitments", "stripe_customer_id TEXT"],
+  ["commitments", "payment_method_id TEXT"],
+  ["commitments", "card_label TEXT"],
+  ["commitments", "setup_session_id TEXT"],
+  ["commitments", "charge_error TEXT"],
 ];
 
 export const UNIVERSITY = "Yeshiva University";

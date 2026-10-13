@@ -89,10 +89,10 @@ export default async function Home() {
             <div className="eyebrow">How it works</div>
             <h2>More buyers. More bargaining power.</h2>
             <div className="steps four">
-              <div className="step"><div className="step-num">01</div><h3>Join at your price</h3><p>Pick the most you’d pay: “I’ll buy at $199 or less.” It’s free to join and nothing is charged.</p></div>
+              <div className="step"><div className="step-num">01</div><h3>Join at your price</h3><p>Pick the most you’d pay: “I’ll buy at $199 or less”, and save a card. Nothing is charged now.</p></div>
               <div className="step"><div className="step-num">02</div><h3>Share to unlock tiers</h3><p>“23 more buyers unlocks the next tier.” Every friend who joins makes the group harder to ignore.</p></div>
               <div className="step"><div className="step-num">03</div><h3>Sellers compete</h3><p>We show retailers and distributors the real demand at each price and ask for their best offer.</p></div>
-              <div className="step"><div className="step-num">04</div><h3>Everyone pays one price</h3><p>Everyone whose price is at or above the deal gets it, and everyone pays the same final price.</p></div>
+              <div className="step"><div className="step-num">04</div><h3>Automatic checkout</h3><p>If the deal lands at or below your price, your card is charged the group’s final price automatically. Everyone pays the same.</p></div>
             </div>
             <div className="promise" style={{ marginTop: 22 }}>
               <strong>Your target price decides whether you’re in the deal, not what we charge you.</strong>
@@ -131,8 +131,8 @@ export default async function Home() {
             <div className="eyebrow">Questions</div>
             <h2>Good to know</h2>
             <div className="faq">
-              <details><summary>Does joining cost anything?</summary><p>No. Joining is free and nothing is charged. If we secure a price at or below your maximum, we email you a link to pay.</p></details>
-              <details><summary>What if the price isn’t reached?</summary><p>Then you’re not in that deal and you aren’t charged. We’ll let you know about the next round.</p></details>
+              <details><summary>Does joining cost anything?</summary><p>No. Joining is free. You save a card securely with Stripe, and it’s charged once, automatically, only if we secure a price at or below your maximum, at the group’s final price.</p></details>
+              <details><summary>What if the price isn’t reached?</summary><p>Then you’re not in that deal and your card is never charged. We’ll let you know about the next round.</p></details>
               <details><summary>Why does everyone pay the same price?</summary><p>So it’s always safe to tell us the real most you’d pay. Your maximum only decides whether you’re in; the final price is the same for everyone in the group.</p></details>
               <details><summary>Are the target prices guaranteed?</summary><p>No. Targets and tiers are goals we take to sellers. We only confirm a price once a seller has agreed to it.</p></details>
               <details><summary>Can I change my mind?</summary><p>Yes. Until joining closes you can change your price or withdraw from the link in your email.</p></details>

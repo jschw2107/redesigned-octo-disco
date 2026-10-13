@@ -28,10 +28,10 @@ const TABS = [
 ] as const;
 
 const STATUS_BADGE: Record<string, string> = {
-  pending: "warn", active: "good", won: "", paid: "good", not_matched: "neutral", withdrawn: "neutral", cancelled: "bad",
+  pending: "warn", pending_card: "warn", active: "good", won: "", paid: "good", not_matched: "neutral", withdrawn: "neutral", cancelled: "bad",
 };
 const STATUS_LABEL: Record<string, string> = {
-  pending: "Unconfirmed", active: "Committed", won: "Won: awaiting payment", paid: "Paid", not_matched: "Above their price", withdrawn: "Withdrew", cancelled: "Cancelled",
+  pending: "Unconfirmed", pending_card: "Needs card", active: "Committed", won: "Won: awaiting payment", paid: "Paid", not_matched: "Above their price", withdrawn: "Withdrew", cancelled: "Cancelled",
 };
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -77,7 +77,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 async function Overview() {
   const [week, total, campaigns, pending, reqs] = await Promise.all([
     demand(7), demand(), listCampaigns(),
-    one<{ n: number }>("SELECT COUNT(*) AS n FROM commitments WHERE status='pending'"),
+    one<{ n: number }>("SELECT COUNT(*) AS n FROM commitments WHERE status IN ('pending','pending_card')"),
     one<{ n: number }>("SELECT COUNT(*) AS n FROM requests WHERE status='pending'"),
   ]);
   const pitch = `In seven days, we aggregated ${usd(week.dollars, 0)} of committed purchasing demand from ${week.students} students.`;
@@ -97,7 +97,7 @@ async function Overview() {
         <div className="kpi"><div className="small muted">All-time demand</div><div className="v">{usdCompact(total.dollars)}</div></div>
         <div className="kpi"><div className="small muted">Students</div><div className="v">{total.students}</div><div className="small muted">{total.edu} with .edu email</div></div>
         <div className="kpi"><div className="small muted">Commitments</div><div className="v">{total.commitments}</div><div className="small muted">{total.units} units</div></div>
-        <div className="kpi"><div className="small muted">Awaiting email confirmation</div><div className="v">{pending?.n ?? 0}</div></div>
+        <div className="kpi"><div className="small muted">Started, not finished</div><div className="v">{pending?.n ?? 0}</div><div className="small muted">no card / unconfirmed</div></div>
         <div className="kpi"><div className="small muted">Requests to review</div><div className="v">{reqs?.n ?? 0}</div><Link className="small" href="/admin?tab=requests">Review →</Link></div>
       </div>
       <p className="small muted">Demand = units × each buyer’s maximum price, counting confirmed commitments only.</p>
@@ -179,7 +179,7 @@ async function CampaignDetail({ id }: { id: number }) {
       </div>
       <div className="kpis">
         <div className="kpi"><div className="small muted">Committed</div><div className="v">{c.units}</div><div className="small muted">of {c.goal} {plural(c.goal, c.unit)} goal</div></div>
-        <div className="kpi"><div className="small muted">Buyers</div><div className="v">{c.buyers}</div><div className="small muted">{by.pending?.n ?? 0} unconfirmed</div></div>
+        <div className="kpi"><div className="small muted">Buyers</div><div className="v">{c.buyers}</div><div className="small muted">{(by.pending?.n ?? 0) + (by.pending_card?.n ?? 0)} not finished</div></div>
         <div className="kpi"><div className="small muted">Demand</div><div className="v">{usdCompact(c.demand_cents)}</div></div>
         <div className="kpi"><div className="small muted">{c.status === "deal" ? "Deal price" : "Current target"}</div><div className="v">{usd(c.status === "deal" ? c.final_cents : l.current)}</div><div className="small muted">normal {usd(c.normal_cents)}</div></div>
         {c.status === "deal" && <div className="kpi"><div className="small muted">Paid</div><div className="v">{by.paid?.n ?? 0}/{(by.paid?.n ?? 0) + (by.won?.n ?? 0)}</div><div className="small muted">{usd(by.paid?.amount ?? 0)} collected</div></div>}
@@ -223,6 +223,7 @@ async function Buyers({ campaignId, embedded = false }: { campaignId: number | n
   const rows = await all<{
     id: number; token: string; created_at: string; name: string; email: string; university_name: string; hall_name: string; apartment: string;
     max_cents: number; qty: number; status: string; amount_cents: number | null; refunded_cents: number; number: number; title: string; refs: number;
+    card_label: string | null; charge_error: string | null;
   }>(
     `SELECT m.*, c.number, c.title, (SELECT COUNT(*) FROM commitments r WHERE r.ref=m.token AND r.status IN ('active','won','paid')) AS refs
      FROM commitments m JOIN campaigns c ON c.id=m.campaign_id ${campaignId ? "WHERE c.id=?" : ""} ORDER BY m.created_at DESC LIMIT 1000`,
@@ -258,6 +259,8 @@ async function Buyers({ campaignId, embedded = false }: { campaignId: number | n
                     <span className={`badge ${STATUS_BADGE[m.status] ?? "neutral"}`}>{STATUS_LABEL[m.status] ?? m.status}</span>
                     {m.amount_cents != null && (m.status === "won" || m.status === "paid") && <div className="small muted">{usd(m.amount_cents)}</div>}
                     {m.refunded_cents > 0 && <div className="small muted">Refunded {usd(m.refunded_cents)}</div>}
+                    {m.card_label && <div className="small muted">💳 {m.card_label}</div>}
+                    {m.charge_error && m.status === "won" && <div className="small" style={{ color: "var(--bad)" }}>Auto-charge failed: {m.charge_error}</div>}
                   </td>
                   <td className="num">{m.refs || ""}</td>
                   <td className="num">{!["cancelled", "not_matched", "withdrawn"].includes(m.status) && <CancelCommitment id={m.id} paid={m.status === "paid"} />}</td>

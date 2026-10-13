@@ -6,7 +6,9 @@ import { code, campaignPath, getCampaign } from "@/lib/campaigns";
 import { checkDomain, newToken, openCampaign, validChoice } from "@/lib/commit";
 import { commitConfirmEmail, commitJoinedEmail, emailEnabled, sendEmail } from "@/lib/email";
 import { fmtDate, getSettings } from "@/lib/data";
-import { siteUrl, type Commitment } from "@/lib/fulfill";
+import { getCommitment, siteUrl, type Commitment } from "@/lib/fulfill";
+import { paymentsEnabled } from "@/lib/stripe";
+import { startCardSetup } from "@/lib/cards";
 
 /** Join a GroupBuy at a maximum price. Nothing is charged. */
 export const POST = handle(async (req: Request) => {
@@ -18,7 +20,10 @@ export const POST = handle(async (req: Request) => {
   await checkDomain(mail);
   const loc = await location(b);
   const ref = typeof b.ref === "string" ? b.ref.slice(0, 40) : null;
-  const verify = emailEnabled();
+  // With payments on, joining saves a card (charged automatically only if a deal lands at or below the max).
+  // A saved card proves the buyer is real, so the separate email confirmation is only used when payments are off.
+  const cards = paymentsEnabled();
+  const verify = !cards && emailEnabled();
   const now = new Date().toISOString();
   const base = await siteUrl(req);
   const tz = (await getSettings()).timezone;
@@ -30,22 +35,24 @@ export const POST = handle(async (req: Request) => {
 
   // Someone typing an email that is already in: with email on, we never let them change another person's spot;
   // we email the owner their private link instead.
-  if (existing && verify && existing.status === "active") {
+  if (existing && (verify || cards) && existing.status === "active") {
     await sendEmail(commitJoinedEmail({
       email: mail, name: existing.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: existing.qty,
       maxCents: existing.max_cents, targetCents: camp.target_cents, normalCents: camp.normal_cents, deadline: fmtDate(camp.deadline, tz),
       manageUrl: `${base}/c/${existing.token}`, shareUrl: `${base}${campaignPath(camp.number)}?ref=${existing.token}`, updated: false,
     }));
-    return NextResponse.json({ status: "already", message: "You're already in. We emailed you a link to view or change your commitment." });
+    return NextResponse.json({ status: "already", message: emailEnabled()
+      ? "You're already in. We emailed you a link to view or change your commitment."
+      : "You're already in this GroupBuy. Use the link from when you joined to view or change it." });
   }
 
-  const status = verify ? "pending" : "active";
+  const status = cards ? "pending_card" : verify ? "pending" : "active";
   let token: string;
   if (existing) {
     token = existing.token;
     await run(
       `UPDATE commitments SET name=?, university_id=?, university_name=?, hall_name=?, apartment=?, max_cents=?, qty=?,
-         status=?, updated_at=? WHERE id=?`,
+         status=?, updated_at=?, payment_method_id=NULL, card_label=NULL WHERE id=?`,
       [name, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status, now, existing.id]);
   } else {
     token = newToken();
@@ -54,6 +61,12 @@ export const POST = handle(async (req: Request) => {
          apartment, max_cents, qty, status, ref, confirmed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [token, camp.id, now, now, name, mail, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status,
         ref && ref !== token ? ref : null, verify ? null : now]);
+  }
+
+  if (cards) {
+    const m = (await getCommitment(token))!;
+    const url = await startCardSetup(m, camp, base);
+    return NextResponse.json({ status: "pending_card", url });
   }
 
   const info = {

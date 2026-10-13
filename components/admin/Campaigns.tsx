@@ -142,11 +142,11 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
   return (
     <div className="panel stack" style={{ gap: 14 }}>
       <h3>Lock in a seller’s price</h3>
-      <p className="small muted">Enter the price a seller agreed to. Everyone whose maximum is at or above it gets the deal at that one price (earliest first if you cap units). Everyone else is told they weren’t charged.</p>
+      <p className="small muted">Enter the price a seller agreed to. Everyone whose maximum is at or above it gets the deal at that one price (earliest first if you cap units), and <strong>their saved cards are charged automatically</strong>. Anyone whose card fails gets a payment link. Everyone else is told they weren’t charged.</p>
       <div className="form-grid">
         <div className="field"><label>Seller’s price per {unit} ($)</label><input className="input" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
         <div className="field"><label>Max units the seller can supply <span className="muted">(optional)</span></label><input className="input" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
-        <div className="field"><label>Buyers must pay by</label><input className="input" type="datetime-local" value={payBy} onChange={(e) => setPayBy(e.target.value)} /></div>
+        <div className="field"><label>Payment-link deadline <span className="muted">(only if a card fails)</span></label><input className="input" type="datetime-local" value={payBy} onChange={(e) => setPayBy(e.target.value)} /></div>
       </div>
       <div className="field"><label>Message to buyers <span className="muted">(pickup/delivery details, shown in emails)</span></label>
         <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pickup Thursday 7–9 PM in the Rubin Hall lobby." /></div>
@@ -161,10 +161,10 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
       <div><button className="btn accent" disabled={busy || !preview || preview.buyers === 0} onClick={async () => {
         setError(null);
         const iso = localInputToIso(payBy, tz);
-        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} for ${preview?.buyers} buyers and email everyone? This can't be undone.`)) return;
+        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} and CHARGE ${preview?.buyers} buyers' saved cards (${usd(preview?.value ?? 0)} total)? This can't be undone.`)) return;
         const r = await api("POST", "/api/admin/campaigns/deal", { id, price, cap, pay_by: iso, note });
         if (!r.ok) return setError(r.error ?? "Failed");
-        setResult(`Done: emailed ${r.data?.won} winners and ${r.data?.missed} others.`);
+        setResult(`Done: charged ${r.data?.charged ?? 0} cards automatically${r.data?.failed ? `, ${r.data.failed} failed (sent a payment link)` : ""}; ${(Number(r.data?.won ?? 0) - Number(r.data?.charged ?? 0) - Number(r.data?.failed ?? 0)) || 0} without a card were emailed a payment link; ${r.data?.missed ?? 0} above the price were told they weren’t charged.`);
         await run("PATCH", "/api/admin/campaigns", { id, deal_note: note }); // refreshes the page
       }}>Lock in deal & email buyers</button></div>
     </div>

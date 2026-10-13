@@ -97,3 +97,20 @@ export function RefreshWhilePending({ seconds = 4, maxTries = 15 }: { seconds?: 
   }, [router, seconds, maxTries]);
   return null;
 }
+
+/** Opens Stripe's secure form to add or replace the saved card. */
+export function CardButton({ token, label, primary = false }: { token: string; label: string; primary?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <span className="stack" style={{ gap: 8 }}>
+      <button className={`btn ${primary ? "accent" : "ghost sm"}`} disabled={busy} onClick={async () => {
+        setBusy(true); setErr(null);
+        const r = await call("POST", `/api/commit/${token}/card`);
+        if (r.ok && r.data?.url) { window.location.href = r.data.url; return; }
+        setBusy(false); setErr(r.ok ? "Couldn’t open the card form." : r.error);
+      }}>{busy ? "Opening…" : label}</button>
+      {err && <span className="small" style={{ color: "var(--bad)" }}>{err}</span>}
+    </span>
+  );
+}

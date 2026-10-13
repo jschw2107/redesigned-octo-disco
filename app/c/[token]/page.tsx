@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Footer, Header } from "@/components/Header";
 import { CampaignVisual } from "@/components/CampaignCard";
-import { CommitEditor, PayButton, RefreshWhilePending } from "@/components/CommitManager";
+import { CardButton, CommitEditor, PayButton, RefreshWhilePending } from "@/components/CommitManager";
+import { saveCardFromSession, sendJoinedReceipt } from "@/lib/cards";
+import { chargeConsent } from "@/lib/consent";
 import { ShareBox } from "@/components/ShareBox";
 import { one, run } from "@/lib/db";
 import { fmtDate, getSettings } from "@/lib/data";
@@ -14,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Your GroupBuy commitment", robots: { index: false } };
 
 export default async function CommitmentPage({ params, searchParams }: {
-  params: Promise<{ token: string }>; searchParams: Promise<{ confirm?: string; session_id?: string }>;
+  params: Promise<{ token: string }>; searchParams: Promise<{ confirm?: string; session_id?: string; setup_session?: string }>;
 }) {
   const { token } = await params;
   const sp = await searchParams;
@@ -28,6 +30,17 @@ export default async function CommitmentPage({ params, searchParams }: {
       [new Date().toISOString(), new Date().toISOString(), m.id]);
     m = (await getCommitment(token))!;
     justConfirmed = true;
+  }
+  // Returning from Stripe after saving a card: store it now in case the webhook hasn't arrived yet.
+  if (sp.setup_session && stripe()) {
+    try {
+      if (await saveCardFromSession(token, sp.setup_session)) {
+        const wasPending = m.status === "pending_card";
+        await sendJoinedReceipt(token, await siteUrl());
+        justConfirmed = wasPending;
+      }
+      m = (await getCommitment(token))!;
+    } catch (e) { console.error("[stripe] card save failed", e); }
   }
   // Returning from Stripe: confirm the payment directly in case the webhook hasn't arrived yet.
   if (m.status === "won" && sp.session_id && sp.session_id === m.stripe_session_id && stripe()) {
@@ -64,6 +77,7 @@ export default async function CommitmentPage({ params, searchParams }: {
             <div className="eyebrow" style={{ marginBottom: 6 }}>Your commitment</div>
             <h2 style={{ fontSize: "2rem" }}>
               {m.status === "pending" && "Confirm your email to count"}
+              {m.status === "pending_card" && "Add a card to finish joining"}
               {m.status === "active" && (justConfirmed ? `Confirmed: you’re in, ${first}!` : `You’re in, ${first}`)}
               {m.status === "withdrawn" && "You withdrew"}
               {m.status === "won" && `Deal secured at ${usd(c.final_cents)}`}
@@ -85,10 +99,25 @@ export default async function CommitmentPage({ params, searchParams }: {
 
         <div className="stack" style={{ gap: 18, marginTop: 18 }}>
           {m.status === "pending" && <div className="alert info">We emailed {m.email} a confirmation link. Click it to be counted.</div>}
+          {m.status === "pending_card" && open && (
+            <div className="panel stack">
+              <p>You’re not counted yet. Save a card with Stripe to lock in your spot. <strong>Nothing is charged now.</strong></p>
+              <p className="small muted">{chargeConsent(c, m.max_cents, m.qty)}</p>
+              <CardButton token={token} label="Save card & join" primary />
+            </div>
+          )}
+          {m.card_label && ["active", "withdrawn", "pending_card"].includes(m.status) && (
+            <div className="panel row" style={{ padding: 16 }}>
+              <span>💳 <strong>{m.card_label}</strong> <span className="muted small">· charged automatically only if a deal lands at or below {usd(m.max_cents)}</span></span>
+              <div className="spacer" />
+              {open && <CardButton token={token} label="Update card" />}
+            </div>
+          )}
 
           {m.status === "won" && (
             <div className="panel stack">
               <p>Sellers competed and the group landed at <strong>{usd(c.final_cents)}</strong> per {c.unit}, at or below your maximum. Everyone in the group pays this same price.</p>
+              {m.charge_error && <div className="alert warn small">We couldn’t charge your saved card ({m.charge_error}). Please pay below to keep your spot.</div>}
               <div className="row"><span>Total{c.fee_cents ? ` (incl. ${usd(c.fee_cents)} GroupBuy fee each)` : ""}</span><div className="spacer" /><strong style={{ fontSize: "1.3rem" }}>{usd(m.amount_cents)}</strong></div>
               {c.pay_by && <p className="small muted">Please pay by {fmtDate(c.pay_by, tz)} to keep your spot.</p>}
               {c.deal_note && <p className="small">{c.deal_note}</p>}
@@ -97,7 +126,10 @@ export default async function CommitmentPage({ params, searchParams }: {
           )}
           {m.status === "paid" && (
             <div className="panel stack">
-              <p>We received <strong>{usd(m.amount_cents)}</strong>. {c.deal_note || "We’ll email you pickup or delivery details."}</p>
+              <p>
+                {m.payment_method_id && !m.stripe_session_id && m.card_label ? <>We charged <strong>{usd(m.amount_cents)}</strong> to {m.card_label} automatically, as you authorized.</> : <>We received <strong>{usd(m.amount_cents)}</strong>.</>}{" "}
+                {c.deal_note || "We’ll email you pickup or delivery details."}
+              </p>
             </div>
           )}
           {m.status === "not_matched" && (

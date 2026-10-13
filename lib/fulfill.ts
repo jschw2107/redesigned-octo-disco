@@ -3,8 +3,9 @@ import { all, db, one, run } from "./db";
 import { fmtDate, getSettings } from "./data";
 import { campaignPath, clearing, code, getCampaign, type Campaign } from "./campaigns";
 import {
-  campaignLiveEmail, commitCancelledEmail, commitPaidEmail, dealMissedEmail, dealWonEmail, sendEmail,
+  campaignLiveEmail, commitCancelledEmail, commitPaidEmail, dealChargedEmail, dealMissedEmail, dealWonEmail, sendEmail,
 } from "./email";
+import { chargeSavedCard } from "./cards";
 import { paymentsEnabled, stripe } from "./stripe";
 
 /** Public base URL for links in emails and Stripe redirects. Set SITE_URL in production. */
@@ -22,6 +23,7 @@ export type Commitment = {
   university_id: number | null; university_name: string; hall_name: string; apartment: string; max_cents: number; qty: number;
   status: string; ref: string | null; confirmed_at: string | null; amount_cents: number | null; paid_at: string | null;
   stripe_session_id: string | null; payment_intent: string | null; refunded_cents: number;
+  stripe_customer_id: string | null; payment_method_id: string | null; card_label: string | null; setup_session_id: string | null; charge_error: string | null;
 };
 
 export const getCommitment = (token: string) => one<Commitment>("SELECT * FROM commitments WHERE token=?", [token]);
@@ -52,11 +54,28 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
   const online = paymentsEnabled();
   const won = await all<Commitment>("SELECT * FROM commitments WHERE campaign_id=? AND status='won'", [camp.id]);
   const missed = await all<Commitment>("SELECT * FROM commitments WHERE campaign_id=? AND status='not_matched'", [camp.id]);
+  let charged = 0, failed = 0;
   for (const m of won) {
+    const amount = m.amount_cents ?? m.qty * (opts.priceCents + camp.fee_cents);
+    let chargeError: string | undefined;
+    // Saved card: charge automatically, as the buyer authorized when joining.
+    if (online && m.payment_method_id) {
+      const r = await chargeSavedCard(m, camp, amount);
+      if (r.ok) {
+        await run("UPDATE commitments SET payment_intent=?, charge_error=NULL WHERE id=?", [r.paymentIntent, m.id]);
+        if (!r.processing) await markCommitPaid(m.token, r.paymentIntent, opts.base, { auto: true });
+        charged++;
+        continue;
+      }
+      chargeError = r.error;
+      failed++;
+      await run("UPDATE commitments SET charge_error=? WHERE id=?", [r.error, m.id]);
+    }
+    // No saved card, or the charge failed: email a payment link instead.
     await sendEmail(dealWonEmail({
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
-      finalCents: opts.priceCents, feeCents: camp.fee_cents, amountCents: m.amount_cents ?? m.qty * (opts.priceCents + camp.fee_cents),
-      normalCents: camp.normal_cents, payBy: fmtDate(opts.payBy, tz), note: opts.note, payUrl: `${opts.base}/c/${m.token}`, online,
+      finalCents: opts.priceCents, feeCents: camp.fee_cents, amountCents: amount,
+      normalCents: camp.normal_cents, payBy: fmtDate(opts.payBy, tz), note: opts.note, payUrl: `${opts.base}/c/${m.token}`, online, chargeError,
     }));
   }
   for (const m of missed) {
@@ -64,11 +83,11 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, finalCents: opts.priceCents, maxCents: m.max_cents, url: opts.base,
     }));
   }
-  return { ...res, won: won.length, missed: missed.length };
+  return { ...res, won: won.length, missed: missed.length, charged, failed };
 }
 
 /** Marks a deal payment as paid. Idempotent: the webhook and the return page can both call it. */
-export async function markCommitPaid(token: string, paymentIntent: string | null, base: string) {
+export async function markCommitPaid(token: string, paymentIntent: string | null, base: string, opts: { auto?: boolean } = {}) {
   const now = new Date().toISOString();
   const r = await run(
     "UPDATE commitments SET status='paid', paid_at=?, payment_intent=COALESCE(?, payment_intent), updated_at=? WHERE token=? AND status='won'",
@@ -76,10 +95,19 @@ export async function markCommitPaid(token: string, paymentIntent: string | null
   if (r.rowsAffected !== 1) return false;
   const m = (await getCommitment(token))!;
   const camp = (await getCampaign({ id: m.campaign_id }))!;
-  await sendEmail(commitPaidEmail({
-    email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
-    amountCents: m.amount_cents ?? 0, note: camp.deal_note, url: `${base}/c/${m.token}`,
-  }));
+  const auto = opts.auto || (!!m.payment_method_id && m.stripe_session_id == null);
+  if (auto) {
+    await sendEmail(dealChargedEmail({
+      email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
+      finalCents: camp.final_cents ?? 0, feeCents: camp.fee_cents, amountCents: m.amount_cents ?? 0, normalCents: camp.normal_cents,
+      card: m.card_label ?? "your saved card", note: camp.deal_note, url: `${base}/c/${m.token}`,
+    }));
+  } else {
+    await sendEmail(commitPaidEmail({
+      email: m.email, name: m.name, code: code(camp.number), title: camp.title, unit: camp.unit, qty: m.qty,
+      amountCents: m.amount_cents ?? 0, note: camp.deal_note, url: `${base}/c/${m.token}`,
+    }));
+  }
   if (process.env.ADMIN_EMAIL) {
     const amt = `$${((m.amount_cents ?? 0) / 100).toFixed(2)}`;
     await sendEmail({

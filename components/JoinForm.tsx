@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LocationPicker, emptyLocation, locationComplete, type Uni } from "./LocationPicker";
 import { ShareBox } from "./ShareBox";
+import { chargeConsent } from "@/lib/consent";
 
 const usd = (c: number) => (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: c % 100 ? 2 : 0 });
 
 type Props = {
   campaign: number; title: string; unit: string; options: number[]; maxPerBuyer: number; feeCents: number;
-  normalCents: number; universities: Uni[]; domains: string[]; nextTierText: string;
+  normalCents: number; universities: Uni[]; domains: string[]; nextTierText: string; cards: boolean;
 };
 
 export function JoinForm(p: Props) {
@@ -20,6 +21,7 @@ export function JoinForm(p: Props) {
   const [email, setEmail] = useState("");
   const [loc, setLoc] = useState(() => emptyLocation(p.universities, null));
   const [ref, setRef] = useState<string | null>(null);
+  const [agree, setAgree] = useState(false);
   const [state, setState] = useState<{ busy: boolean; error?: string }>({ busy: false });
   const [done, setDone] = useState<null | { status: string; shareUrl: string; token: string | null; message?: string }>(null);
 
@@ -38,6 +40,7 @@ export function JoinForm(p: Props) {
     }).catch(() => null);
     const data = await res?.json().catch(() => ({}));
     if (!res?.ok) return setState({ busy: false, error: data?.error ?? "Couldn’t reach the server. Try again." });
+    if (data?.status === "pending_card" && data.url) { window.location.href = data.url; return; } // save card with Stripe
     setDone(data);
     setState({ busy: false });
     router.refresh(); // update the live counts on the page
@@ -109,11 +112,24 @@ export function JoinForm(p: Props) {
       </div>
       <LocationPicker universities={p.universities} value={loc} onChange={setLoc} compact />
 
-      <div className="alert info small">
-        <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} automatically if GroupBuy secures a price of {usd(maxCents)} or less{p.feeCents ? ` (plus a ${usd(p.feeCents)} GroupBuy fee per ${p.unit})` : ""}. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
-      </div>
+      {p.cards ? (
+        <>
+          <div className="alert info small">
+            <strong>Nothing is charged now.</strong> Next you’ll save a card securely with Stripe. If GroupBuy secures a price of {usd(maxCents)} or less,
+            your card is charged automatically at the group’s final price. If not, you’re never charged.
+          </div>
+          <label className="choice" style={{ alignItems: "flex-start", fontWeight: 400, fontSize: "0.88rem", lineHeight: 1.45 }}>
+            <input type="checkbox" required checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>{chargeConsent({ title: p.title, fee_cents: p.feeCents, unit: p.unit }, maxCents, qty)}</span>
+          </label>
+        </>
+      ) : (
+        <div className="alert info small">
+          <strong>Nothing is charged now.</strong> By joining you agree to buy {qty > 1 ? `${qty} ${p.unit}s` : `this ${p.unit}`} if GroupBuy secures a price of {usd(maxCents)} or less{p.feeCents ? ` (plus a ${usd(p.feeCents)} GroupBuy fee per ${p.unit})` : ""}. We’ll email you a payment link if that happens. You can change or withdraw until joining closes.
+        </div>
+      )}
       {state.error && <div className="alert error" role="alert">{state.error}</div>}
-      <button className="btn accent" disabled={state.busy}>{state.busy ? "Joining…" : `Join at ${usd(maxCents)} or less`}</button>
+      <button className="btn accent" disabled={state.busy}>{state.busy ? (p.cards ? "Opening secure card form…" : "Joining…") : p.cards ? `Join at ${usd(maxCents)} or less: save card` : `Join at ${usd(maxCents)} or less`}</button>
     </form>
   );
 }
