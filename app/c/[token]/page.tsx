@@ -6,7 +6,9 @@ import { CardButton, CommitEditor, PayButton, RefreshWhilePending } from "@/comp
 import { saveCardFromSession, sendJoinedReceipt } from "@/lib/cards";
 import { chargeConsent, feePerUnit, pct } from "@/lib/consent";
 import { ShareBox } from "@/components/ShareBox";
-import { one, run } from "@/lib/db";
+import { all, one, run } from "@/lib/db";
+import { UpdatesList, type Update } from "@/components/Updates";
+import { updateApplies } from "@/lib/updates";
 import { fmtDate, getSettings } from "@/lib/data";
 import { campaignPath, code, getCampaign, isOpen, ladder, parseOptions, plural, usd } from "@/lib/campaigns";
 import { getCommitment, markCommitPaid, siteUrl } from "@/lib/fulfill";
@@ -64,6 +66,8 @@ export default async function CommitmentPage({ params, searchParams }: {
   const shareUrl = `${base}${campaignPath(c.number)}?ref=${token}`;
   const nextTierText = l.next ? `${l.toNext} more ${unitPl(l.toNext)} to ${l.goalReached ? `unlock the ${usd(l.next.cents)} tier` : "hit the goal"}.` : "Top tier reached. More buyers still add bargaining power.";
   const first = m.name.split(" ")[0];
+  const updates = (await all<Update>("SELECT * FROM updates WHERE campaign_id=? ORDER BY created_at DESC", [c.id]))
+    .filter((u) => updateApplies(u.audience, m!.status));
 
   return (
     <>
@@ -153,6 +157,7 @@ export default async function CommitmentPage({ params, searchParams }: {
           {!open && m.status === "active" && (
             <div className="alert info">Joining has closed and we’re negotiating with sellers. You’ll get an email as soon as there’s a result.</div>
           )}
+          <UpdatesList updates={updates} tz={tz} />
           <p className="small muted">Your maximum price only decides whether you’re in. Everyone in the group pays the same final price plus GroupBuy’s share of their savings, never more than the total shown when they joined. Keep this link private: it lets you change your commitment.</p>
         </div>
       </main>

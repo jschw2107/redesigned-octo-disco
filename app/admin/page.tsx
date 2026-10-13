@@ -9,10 +9,12 @@ import { paymentsEnabled } from "@/lib/stripe";
 import { emailEnabled } from "@/lib/email";
 import { AdminLogin, CampusManager, DeleteWaitlist, IntegrationsPanel, LogoutButton } from "@/components/admin/AdminClient";
 import {
-  AnnounceButton, CampaignEditor, CancelCommitment, ImageUploader, CopyText, DealPanel, DeleteCampaign, NewCampaignButton, RequestActions,
+  AnnounceButton, CampaignEditor, CancelCommitment, ImageUploader, UpdateComposer, ExtrasManager, CancelExtraOrder, CopyText, DealPanel, DeleteCampaign, NewCampaignButton, RequestActions,
   SettingsForm, StatusControl,
 } from "@/components/admin/Campaigns";
 import { Countdown } from "@/components/Countdown";
+import { AUDIENCES, audienceCounts } from "@/lib/updates";
+import type { ExtraOrder } from "@/lib/extras";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Admin · GroupBuy", robots: { index: false } };
@@ -168,6 +170,12 @@ async function CampaignDetail({ id }: { id: number }) {
       "SELECT status, COUNT(*) AS n, COALESCE(SUM(qty),0) AS units, COALESCE(SUM(amount_cents),0) AS amount FROM commitments WHERE campaign_id=? GROUP BY status", [c.id]),
   ]);
   const by = Object.fromEntries(stats.map((s) => [s.status, s]));
+  const [counts, updates, extraOrders] = await Promise.all([
+    audienceCounts(c.id),
+    all<{ id: number; created_at: string; audience: string; subject: string; sent: number }>("SELECT * FROM updates WHERE campaign_id=? ORDER BY created_at DESC", [c.id]),
+    all<ExtraOrder>("SELECT * FROM extra_orders WHERE campaign_id=? AND status != 'expired' ORDER BY created_at DESC", [c.id]),
+  ]);
+  const audienceLabels = Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, v.label]));
   const l = ladder(c);
   return (
     <>
@@ -215,6 +223,21 @@ async function CampaignDetail({ id }: { id: number }) {
               <p className="small muted">{by.won?.n ?? 0} awaiting payment · {by.paid?.n ?? 0} paid · {by.not_matched?.n ?? 0} above their price{c.pay_by ? ` · pay by ${fmtDate(c.pay_by, tz)}` : ""}</p>
             </div>
           )}
+          {(c.status === "deal" || c.extra_units > 0 || extraOrders.length > 0) && (
+            <ExtrasManager id={c.id} units={c.extra_units} priceCents={c.extra_cents} bought={c.bought_units} />
+          )}
+          <UpdateComposer id={c.id} counts={counts} labels={audienceLabels} />
+          {updates.length > 0 && (
+            <div className="panel stack" style={{ gap: 8 }}>
+              <h3>Updates sent</h3>
+              {updates.map((u) => (
+                <div key={u.id} className="row small" style={{ gap: 8 }}>
+                  <strong>{u.subject}</strong><span className="muted">→ {AUDIENCES[u.audience as keyof typeof AUDIENCES]?.label ?? u.audience}</span>
+                  <div className="spacer" /><span className="muted">{u.sent} sent · {fmtDate(u.created_at, tz)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="stack" style={{ gap: 16 }}>
           <ImageUploader id={c.id} imageUrl={c.image_url} emoji={c.emoji} />
@@ -222,6 +245,29 @@ async function CampaignDetail({ id }: { id: number }) {
         </div>
       </div>
       <Buyers campaignId={c.id} embedded />
+      {extraOrders.length > 0 && (
+        <>
+          <div className="admin-h"><h2>Extras orders</h2><span className="badge">{extraOrders.length}</span><div className="spacer" /><a className="btn ghost sm" href={`/api/admin/extras?campaign=${c.id}`}>Download CSV</a></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Order</th><th>Buyer</th><th>Deliver to</th><th className="num">Qty</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
+              <tbody>
+                {extraOrders.map((o) => (
+                  <tr key={o.id}>
+                    <td>{o.code}<div className="small muted">{fmtDate(o.created_at, tz)}</div></td>
+                    <td>{o.name}<div className="small muted">{o.email}</div></td>
+                    <td>{o.university_name}<div className="small muted">{o.hall_name}{o.room ? ` · Room ${o.room}` : ""}{o.apartment ? ` · ${o.apartment}` : ""}</div></td>
+                    <td className="num">{o.qty}</td>
+                    <td className="num">{usd(o.amount_cents)}{o.refunded_cents > 0 && <div className="small muted">Refunded {usd(o.refunded_cents)}</div>}</td>
+                    <td><span className={`badge ${o.status === "paid" ? "good" : o.status === "cancelled" ? "bad" : "warn"}`}>{o.status.replace("_", " ")}</span></td>
+                    <td className="num">{(o.status === "paid" || o.status === "reserved") && <CancelExtraOrder id={o.id} paid={o.status === "paid"} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -229,7 +275,7 @@ async function CampaignDetail({ id }: { id: number }) {
 async function Buyers({ campaignId, embedded = false }: { campaignId: number | null; embedded?: boolean }) {
   const tz = (await getSettings()).timezone;
   const rows = await all<{
-    id: number; token: string; created_at: string; name: string; email: string; university_name: string; hall_name: string; apartment: string;
+    id: number; token: string; created_at: string; name: string; email: string; university_name: string; hall_name: string; apartment: string; room: string;
     max_cents: number; qty: number; status: string; amount_cents: number | null; refunded_cents: number; number: number; title: string; refs: number;
     card_label: string | null; charge_error: string | null;
   }>(
@@ -260,7 +306,7 @@ async function Buyers({ campaignId, embedded = false }: { campaignId: number | n
                   <td className="small">{fmtDate(m.created_at, tz)}</td>
                   {!campaignId && <td>#{code(m.number)} {m.title}</td>}
                   <td>{m.name}<div className="small muted">{m.email}</div></td>
-                  <td>{m.university_name}<div className="small muted">{m.hall_name}{m.apartment ? ` · ${m.apartment}` : ""}</div></td>
+                  <td>{m.university_name}<div className="small muted">{m.hall_name}{m.room ? ` · Room ${m.room}` : ""}{m.apartment ? ` · ${m.apartment}` : ""}</div></td>
                   <td className="num">{m.qty}</td>
                   <td className="num">{usd(m.max_cents)}</td>
                   <td>

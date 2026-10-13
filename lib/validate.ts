@@ -28,14 +28,15 @@ export async function location(body: Record<string, unknown>) {
   const offCampus = body.off_campus === true;
   if (offCampus) {
     const apartment = str(body.apartment, "Apartment", { required: false, max: 120 });
-    return { uni, hall: null as Hall | null, offCampus, hallName: OFF_CAMPUS_LABEL, apartment };
+    return { uni, hall: null as Hall | null, offCampus, hallName: OFF_CAMPUS_LABEL, apartment, room: "" };
   }
   const hallId = Number(body.hall_id);
   const hall = Number.isInteger(hallId)
     ? await one<Hall>("SELECT * FROM halls WHERE id=? AND university_id=?", [hallId, uni.id])
     : null;
   if (!hall) throw new InputError("Choose your residence hall (or off-campus apartment)");
-  return { uni, hall, offCampus, hallName: hall.name, apartment: "" };
+  const room = str(body.room, "Room number", { required: false, max: 20 });
+  return { uni, hall, offCampus, hallName: hall.name, apartment: "", room };
 }
 
 export function newOrderId() {

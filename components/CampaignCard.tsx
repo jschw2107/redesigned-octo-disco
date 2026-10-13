@@ -51,6 +51,9 @@ export function CampaignCard({ c }: { c: CampaignWithStats }) {
             <div className="small muted">
               {st.key === "open" ? <>Closes in <Countdown to={c.deadline} short /></> : st.label}
             </div>
+            {c.status === "deal" && c.extra_units > 0 && c.extra_cents ? (
+              <span className="badge good" style={{ alignSelf: "flex-start" }}>📦 {c.extra_units} extra {plural(c.extra_units, c.unit)} for sale · {usd(c.extra_cents)}</span>
+            ) : null}
           </div>
         </div>
       </Link>

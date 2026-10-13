@@ -5,6 +5,9 @@ import { Footer, Header } from "@/components/Header";
 import { CampaignVisual, StateBadge } from "@/components/CampaignCard";
 import { Countdown } from "@/components/Countdown";
 import { JoinForm } from "@/components/JoinForm";
+import { BuyExtras } from "@/components/BuyExtras";
+import { cancelExtraCheckout, extrasOnSale, sweepExtraHolds } from "@/lib/extras";
+import { siteUrl } from "@/lib/fulfill";
 import { isAdmin } from "@/lib/auth";
 import { paymentsEnabled } from "@/lib/stripe";
 import { fmtDate, getSettings, getUniversities } from "@/lib/data";
@@ -34,9 +37,13 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   };
 }
 
-export default async function CampaignPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ card_cancelled?: string }> }) {
-  const c = await load((await params).code);
+export default async function CampaignPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ card_cancelled?: string; extra_cancelled?: string }> }) {
+  const raw = (await params).code;
   const sp = await searchParams;
+  // Extras: release this buyer's held stock if they backed out of checkout, and any abandoned holds (before loading counts).
+  if (sp.extra_cancelled) await cancelExtraCheckout(sp.extra_cancelled).catch((e) => console.error("[extras]", e));
+  await sweepExtraHolds(await siteUrl()).catch((e) => console.error("[extras sweep]", e));
+  const c = await load(raw);
   if (!c) notFound();
   const [settings, universities, domains, curve, feeBps] = await Promise.all([getSettings(), getUniversities(), allowedDomains(), demandCurve(c), getFeeBps()]);
   const unis = universities.map((u) => ({ id: u.id, name: u.name, pickup_location: u.pickup_location, halls: u.halls.map((h) => ({ id: h.id, name: h.name })) }));
@@ -138,10 +145,17 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                   feeBps={feeBps} normalCents={c.normal_cents} universities={unis} domains={domains} nextTierText={nextTierText} cards={paymentsEnabled()} />
               </>
             ) : c.status === "deal" ? (
-              <div className="panel stack">
-                <h3>Deal secured: {usd(c.final_cents)}</h3>
-                <p className="muted">Everyone who joined at {usd(c.final_cents)} or more is in, and pays {usd(c.final_cents)}. Saved cards were charged automatically.</p>
-              </div>
+              <>
+                <div className="panel stack">
+                  <h3>Deal secured: {usd(c.final_cents)}</h3>
+                  <p className="muted">Everyone who joined at {usd(c.final_cents)} or more is in, and pays {usd(c.final_cents)}. Saved cards were charged automatically.</p>
+                </div>
+                {sp.extra_cancelled && <div className="alert warn small">Checkout cancelled: you weren’t charged and the items are back on sale.</div>}
+                {extrasOnSale(c) && (
+                  <BuyExtras campaign={c.number} unit={c.unit} priceCents={c.extra_cents!} left={c.extra_units} universities={unis}
+                    groupPriceCents={(c.final_cents ?? 0) + feePerUnit(c.final_cents ?? 0, c.normal_cents, feeBps)} online={paymentsEnabled()} />
+                )}
+              </>
             ) : (
               <div className="panel stack">
                 <h3>{st.label}</h3>

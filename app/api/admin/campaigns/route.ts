@@ -4,7 +4,7 @@ import { one, run } from "@/lib/db";
 import { handle, body } from "@/lib/http";
 import { InputError } from "@/lib/validate";
 import { CAMPAIGN_STATUSES, getCampaign } from "@/lib/campaigns";
-import { notifyRequestVoters, siteUrl } from "@/lib/fulfill";
+import { cancelCampaignOrders, notifyRequestVoters, siteUrl } from "@/lib/fulfill";
 
 const cents = (v: unknown, field: string) => {
   const n = Math.round(Number(String(v ?? "").replace(/[$,\s]/g, "")) * 100);
@@ -89,7 +89,13 @@ export const PATCH = handle(async (req: Request) => {
   if (!keys.length) throw new InputError("Nothing to update");
   await run(`UPDATE campaigns SET ${keys.map((k) => `${k}=?`).join(", ")} WHERE id=?`, [...keys.map((k) => f[k]), id]);
   const fresh = (await getCampaign({ id }))!;
-  const notified = await notifyRequestVoters(fresh, await siteUrl(req));
+  const base = await siteUrl(req);
+  // Cancelling a GroupBuy cancels every order in it: paid ones are refunded and everyone gets an email.
+  if (f.status === "cancelled" && camp.status !== "cancelled") {
+    const r = await cancelCampaignOrders(id, base);
+    return NextResponse.json({ ok: true, ...r });
+  }
+  const notified = await notifyRequestVoters(fresh, base);
   return NextResponse.json({ ok: true, notified });
 });
 

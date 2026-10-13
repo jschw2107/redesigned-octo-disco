@@ -82,6 +82,17 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS images (
      id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER, mime TEXT NOT NULL, data BLOB NOT NULL,
      bytes INTEGER NOT NULL, width INTEGER, height INTEGER, created_at TEXT NOT NULL)`,
+  // Extra units bought to meet a seller's minimum order, sold individually after the deal.
+  `CREATE TABLE IF NOT EXISTS extra_orders (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, campaign_id INTEGER NOT NULL REFERENCES campaigns(id),
+     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL,
+     university_name TEXT NOT NULL DEFAULT '', hall_name TEXT NOT NULL DEFAULT '', room TEXT NOT NULL DEFAULT '', apartment TEXT NOT NULL DEFAULT '',
+     qty INTEGER NOT NULL, unit_cents INTEGER NOT NULL, amount_cents INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending_payment',
+     stripe_session_id TEXT, payment_intent TEXT, paid_at TEXT, refunded_cents INTEGER NOT NULL DEFAULT 0)`,
+  // Order-update messages the admin sends to a GroupBuy's buyers (also shown on their order pages)
+  `CREATE TABLE IF NOT EXISTS updates (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER NOT NULL, created_at TEXT NOT NULL,
+     audience TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS request_votes (
      id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
      email TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(request_id, email))`,
@@ -130,6 +141,12 @@ const COLUMNS: Array<[string, string]> = [
   ["commitments", "card_label TEXT"],
   ["commitments", "setup_session_id TEXT"],
   ["commitments", "charge_error TEXT"],
+  // Room number for delivery/pickup sorting
+  ["commitments", "room TEXT NOT NULL DEFAULT ''"],
+  // Seller minimum orders: units bought, extras left for individual sale and their price
+  ["campaigns", "bought_units INTEGER"],
+  ["campaigns", "extra_units INTEGER NOT NULL DEFAULT 0"],
+  ["campaigns", "extra_cents INTEGER"],
   // GroupBuy's savings-share fee: rate agreed at join time (basis points) and the amount charged at deal time
   ["commitments", "fee_bps INTEGER"],
   ["commitments", "fee_amount_cents INTEGER"],

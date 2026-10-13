@@ -9,6 +9,7 @@ export type Location = {
   hall_id: number | null;
   off_campus: boolean;
   apartment: string;
+  room: string;
   other_university: string;
   other_residence: string;
 };
@@ -19,6 +20,7 @@ export const emptyLocation = (universities: Uni[], preferred?: number | null): L
   hall_id: null,
   off_campus: false,
   apartment: "",
+  room: "",
   other_university: "",
   other_residence: "",
 });
@@ -33,13 +35,15 @@ export function locationComplete(l: Location) {
  * always ending with an "Off-campus apartment" option.
  */
 export function LocationPicker({
-  universities, value, onChange, allowOther = false, compact = false,
+  universities, value, onChange, allowOther = false, compact = false, showRoom = true,
 }: {
   universities: Uni[];
   value: Location;
   onChange: (l: Location) => void;
   allowOther?: boolean;
   compact?: boolean;
+  /** Optional room number once a residence hall is chosen. */
+  showRoom?: boolean;
 }) {
   const id = useId();
   const uni = typeof value.university_id === "number" ? universities.find((u) => u.id === value.university_id) : undefined;
@@ -107,6 +111,13 @@ export function LocationPicker({
               Off-campus apartment
             </label>
           </div>
+          {showRoom && !value.off_campus && value.hall_id != null && (
+            <div className="field" style={{ marginTop: 12, maxWidth: 220 }}>
+              <label htmlFor={`${id}-room`}>Room # <span className="muted">(optional)</span></label>
+              <input id={`${id}-room`} className="input" maxLength={20} placeholder="e.g. 412" autoComplete="off" value={value.room}
+                onChange={(e) => onChange({ ...value, room: e.target.value })} />
+            </div>
+          )}
           {value.off_campus && (
             <div className="field" style={{ marginTop: 12 }}>
               <label htmlFor={`${id}-apt`}>Apartment or building name <span className="muted">(optional)</span></label>

@@ -52,15 +52,15 @@ export const POST = handle(async (req: Request) => {
   if (existing) {
     token = existing.token;
     await run(
-      `UPDATE commitments SET name=?, university_id=?, university_name=?, hall_name=?, apartment=?, max_cents=?, qty=?,
+      `UPDATE commitments SET name=?, university_id=?, university_name=?, hall_name=?, apartment=?, room=?, max_cents=?, qty=?,
          status=?, updated_at=?, payment_method_id=NULL, card_label=NULL, fee_bps=? WHERE id=?`,
-      [name, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status, now, feeBps, existing.id]);
+      [name, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, loc.room, max, qty, status, now, feeBps, existing.id]);
   } else {
     token = newToken();
     await run(
       `INSERT INTO commitments (token, campaign_id, created_at, updated_at, name, email, university_id, university_name, hall_name,
-         apartment, max_cents, qty, status, ref, confirmed_at, fee_bps) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [token, camp.id, now, now, name, mail, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, max, qty, status,
+         apartment, room, max_cents, qty, status, ref, confirmed_at, fee_bps) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [token, camp.id, now, now, name, mail, loc.uni.id, loc.uni.name, loc.hallName, loc.apartment, loc.room, max, qty, status,
         ref && ref !== token ? ref : null, verify ? null : now, feeBps]);
   }
 

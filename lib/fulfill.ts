@@ -1,11 +1,12 @@
 import { headers } from "next/headers";
 import { all, db, one, run } from "./db";
 import { fmtDate, getSettings } from "./data";
-import { campaignPath, clearing, code, getCampaign, type Campaign } from "./campaigns";
+import { campaignPath, clearing, code, getCampaign, getFeeBps, type Campaign } from "./campaigns";
 import {
   campaignLiveEmail, commitCancelledEmail, commitPaidEmail, dealChargedEmail, dealMissedEmail, dealWonEmail, sendEmail,
 } from "./email";
 import { chargeSavedCard } from "./cards";
+import { DEFAULT_MARKUP_BPS, cancelExtraOrder, extraPrice } from "./extras";
 import { feePerUnit, pct } from "./consent";
 import { paymentsEnabled, stripe } from "./stripe";
 
@@ -21,7 +22,7 @@ export async function siteUrl(req?: Request) {
 
 export type Commitment = {
   id: number; token: string; campaign_id: number; created_at: string; updated_at: string; name: string; email: string;
-  university_id: number | null; university_name: string; hall_name: string; apartment: string; max_cents: number; qty: number;
+  university_id: number | null; university_name: string; hall_name: string; apartment: string; room: string; max_cents: number; qty: number;
   status: string; ref: string | null; confirmed_at: string | null; amount_cents: number | null; paid_at: string | null;
   stripe_session_id: string | null; payment_intent: string | null; refunded_cents: number;
   stripe_customer_id: string | null; payment_method_id: string | null; card_label: string | null; setup_session_id: string | null; charge_error: string | null;
@@ -34,11 +35,19 @@ export const getCommitment = (token: string) => one<Commitment>("SELECT * FROM c
  * Lock in a supplier's price. Everyone whose maximum is at or above it (earliest first, up to an optional unit cap)
  * is "won" and pays this one price; everyone else is "not_matched" and is never charged.
  */
-export async function lockDeal(opts: { campaignId: number; priceCents: number; unitCap?: number | null; payBy: string; note: string; base: string }) {
+export async function lockDeal(opts: {
+  campaignId: number; priceCents: number; unitCap?: number | null; payBy: string; note: string; base: string;
+  /** The seller's minimum order. If it's more than the winners bought, GroupBuy buys the rest and sells them as extras. */
+  minOrder?: number | null; markupBps?: number;
+}) {
   const camp = await getCampaign({ id: opts.campaignId });
   if (!camp) throw new Error("Campaign not found");
   const res = await clearing(camp.id, opts.priceCents, opts.unitCap);
   const now = new Date().toISOString();
+  // Seller minimum: buy at least that many; anything beyond the winners' units goes on sale as extras.
+  const bought = Math.max(res.units, opts.minOrder ?? 0);
+  const extraUnits = bought - res.units;
+  const extraUnit = extraPrice(opts.priceCents, camp.normal_cents, await getFeeBps(), opts.markupBps ?? DEFAULT_MARKUP_BPS);
   const c = await db();
   // Each winner pays the clearing price plus GroupBuy's share of their savings, at the rate they agreed to when joining.
   const winners = res.eligible.length
@@ -54,8 +63,8 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
     }),
     ...res.left.map((id) => ({ sql: "UPDATE commitments SET status='not_matched', updated_at=? WHERE id=? AND status='active'", args: [now, id] })),
     {
-      sql: "UPDATE campaigns SET status='deal', final_cents=?, pay_by=?, deal_note=? WHERE id=?",
-      args: [opts.priceCents, opts.payBy, opts.note, camp.id],
+      sql: "UPDATE campaigns SET status='deal', final_cents=?, pay_by=?, deal_note=?, bought_units=?, extra_units=?, extra_cents=? WHERE id=?",
+      args: [opts.priceCents, opts.payBy, opts.note, bought, extraUnits, extraUnits > 0 ? extraUnit : null, camp.id],
     },
   ], "write");
 
@@ -93,7 +102,7 @@ export async function lockDeal(opts: { campaignId: number; priceCents: number; u
       email: m.email, name: m.name, code: code(camp.number), title: camp.title, finalCents: opts.priceCents, maxCents: m.max_cents, url: opts.base,
     }));
   }
-  return { ...res, won: won.length, missed: missed.length, charged, failed };
+  return { ...res, won: won.length, missed: missed.length, charged, failed, bought, extraUnits, extraUnit };
 }
 
 /** Marks a deal payment as paid. Idempotent: the webhook and the return page can both call it. */
@@ -138,16 +147,35 @@ async function refund(paymentIntent: string | null, alreadyRefunded: number, amo
 }
 
 /** Admin cancels a buyer's spot. Paid spots are refunded in full and the buyer is emailed. */
-export async function cancelCommitment(id: number) {
+/**
+ * Admin cancels a buyer's order. Paid orders are refunded in full. The buyer always gets an email
+ * (unless they had already withdrawn, weren't matched, or never finished joining).
+ */
+export async function cancelCommitment(id: number, opts: { reason?: "admin" | "campaign"; base?: string } = {}) {
   const m = await one<Commitment>("SELECT * FROM commitments WHERE id=?", [id]);
   if (!m || m.status === "cancelled") return { refunded: 0 };
   const refunded = m.status === "paid" ? await refund(m.payment_intent, m.refunded_cents, m.amount_cents ?? 0) : 0;
   await run("UPDATE commitments SET status='cancelled', refunded_cents=refunded_cents+?, updated_at=? WHERE id=?", [refunded, new Date().toISOString(), id]);
   const camp = await getCampaign({ id: m.campaign_id });
-  if (camp && (m.status === "won" || m.status === "paid")) {
-    await sendEmail(commitCancelledEmail({ email: m.email, name: m.name, code: code(camp.number), title: camp.title, refundedCents: refunded }));
+  if (camp && ["active", "pending_card", "pending", "won", "paid"].includes(m.status)) {
+    await sendEmail(commitCancelledEmail({
+      email: m.email, name: m.name, code: code(camp.number), title: camp.title, refundedCents: refunded,
+      wasCharged: m.status === "paid", reason: opts.reason ?? "admin", url: opts.base,
+    }));
   }
   return { refunded };
+}
+
+/** Admin cancels a whole GroupBuy: every open order is cancelled (paid ones refunded) and everyone is emailed. */
+export async function cancelCampaignOrders(campaignId: number, base: string) {
+  const ms = await all<{ id: number }>(
+    "SELECT id FROM commitments WHERE campaign_id=? AND status IN ('active','pending_card','pending','won','paid')", [campaignId]);
+  let refunded = 0;
+  for (const m of ms) refunded += (await cancelCommitment(m.id, { reason: "campaign", base })).refunded;
+  const xs = await all<{ id: number }>("SELECT id FROM extra_orders WHERE campaign_id=? AND status IN ('paid','reserved')", [campaignId]);
+  for (const x of xs) refunded += (await cancelExtraOrder(x.id)).refunded;
+  await run("UPDATE campaigns SET extra_units=0 WHERE id=?", [campaignId]);
+  return { cancelled: ms.length + xs.length, refunded };
 }
 
 /** When a campaign created from a student request goes live, tell everyone who said they'd join. */

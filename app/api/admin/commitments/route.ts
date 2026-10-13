@@ -12,7 +12,7 @@ export const GET = handle(async (req: Request) => {
   const id = new URL(req.url).searchParams.get("campaign");
   const rows = await all(
     `SELECT printf('%03d', c.number) AS groupbuy, c.title, m.created_at, m.status, m.name, m.email, m.university_name AS university,
-            m.hall_name AS residence, m.apartment, m.qty, m.max_cents/100.0 AS max_price, m.amount_cents/100.0 AS amount_due,
+            m.hall_name AS residence, m.room, m.apartment, m.qty, m.max_cents/100.0 AS max_price, m.amount_cents/100.0 AS amount_due,
             m.paid_at, m.refunded_cents/100.0 AS refunded, (SELECT name FROM commitments r WHERE r.token=m.ref) AS referred_by
      FROM commitments m JOIN campaigns c ON c.id=m.campaign_id ${id ? "WHERE c.id=?" : ""} ORDER BY c.number, m.created_at`,
     id ? [Number(id)] : []);

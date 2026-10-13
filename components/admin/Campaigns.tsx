@@ -98,7 +98,7 @@ export function StatusControl({ id, status, isDeal }: { id: number; status: stri
     <div className="row">
       <select className="sm" style={{ width: "auto" }} value={status} disabled={busy} onChange={(e) => {
         if (e.target.value === "deal") return;
-        if (e.target.value === "cancelled" && !confirm("Cancel this GroupBuy? It will be hidden from students.")) return;
+        if (e.target.value === "cancelled" && !confirm("Cancel this GroupBuy? Every order in it is cancelled, paid ones are refunded in full, and everyone gets an email. It will be hidden from students.")) return;
         run("PATCH", "/api/admin/campaigns", { id, status: e.target.value });
       }}>
         {opts.map((o) => <option key={o} value={o} disabled={o === "deal"}>{labels[o]}</option>)}
@@ -123,20 +123,24 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
 }) {
   const [price, setPrice] = useState(curve.length ? dollars(curve[0].price) : "");
   const [cap, setCap] = useState("");
+  const [minOrder, setMinOrder] = useState("");
+  const [markup, setMarkup] = useState("10");
   const [payBy, setPayBy] = useState(() => isoToLocalInput(new Date(Date.now() + 3 * 86400000).toISOString(), tz));
   const [note, setNote] = useState("");
-  const [preview, setPreview] = useState<{ buyers: number; units: number; value: number; left: number; savings: number; fees: number; charged: number } | null>(null);
+  const [preview, setPreview] = useState<{ buyers: number; units: number; value: number; left: number; savings: number; fees: number; charged: number;
+    bought: number; extraUnits: number; extraUnit: number; sellerCost: number; extrasValue: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const { busy, error, run, setError } = useAction();
 
   useEffect(() => {
     const t = setTimeout(async () => {
       if (!price) return setPreview(null);
-      const r = await api("GET", `/api/admin/campaigns/deal?id=${id}&price=${encodeURIComponent(price)}&cap=${encodeURIComponent(cap)}`);
+      const q = `id=${id}&price=${encodeURIComponent(price)}&cap=${encodeURIComponent(cap)}&min=${encodeURIComponent(minOrder)}&markup=${encodeURIComponent(markup)}`;
+      const r = await api("GET", `/api/admin/campaigns/deal?${q}`);
       setPreview(r.ok ? (r.data as never) : null);
     }, 250);
     return () => clearTimeout(t);
-  }, [price, cap, id]);
+  }, [price, cap, minOrder, markup, id]);
 
   return (
     <div className="panel stack" style={{ gap: 14 }}>
@@ -145,9 +149,11 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
       <div className="form-grid">
         <div className="field"><label>Seller’s price per {unit} ($)</label><input className="input" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
         <div className="field"><label>Max units the seller can supply <span className="muted">(optional)</span></label><input className="input" type="number" min={1} value={cap} onChange={(e) => setCap(e.target.value)} /></div>
+        <div className="field"><label>Seller’s minimum order <span className="muted">(units, optional)</span></label><input className="input" type="number" min={1} value={minOrder} onChange={(e) => setMinOrder(e.target.value)} placeholder="e.g. 120" /></div>
+        <div className="field"><label>Markup on extra units (%)</label><input className="input" inputMode="decimal" value={markup} onChange={(e) => setMarkup(e.target.value)} /></div>
         <div className="field"><label>Payment-link deadline <span className="muted">(only if a card fails)</span></label><input className="input" type="datetime-local" value={payBy} onChange={(e) => setPayBy(e.target.value)} /></div>
       </div>
-      <div className="field"><label>Message to buyers <span className="muted">(pickup/delivery details, shown in emails)</span></label>
+      <div className="field"><label>Message to buyers <span className="muted">(pickup/delivery details, shown in emails and to extras buyers)</span></label>
         <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pickup Thursday 7–9 PM in the Rubin Hall lobby." /></div>
       {preview && (
         <div className="alert info">
@@ -156,13 +162,22 @@ export function DealPanel({ id, normalCents, unit, curve, tz }: {
           {" "}Students save {usd(preview.savings - preview.fees)} net vs normal ({usd(normalCents)}). {preview.left > 0 && `${preview.left} won’t be included.`}
         </div>
       )}
+      {preview && preview.extraUnits > 0 && (
+        <div className="alert warn">
+          The seller requires <strong>{preview.bought}</strong> {unit}s but the group is buying <strong>{preview.units}</strong>. You’ll buy
+          {" "}<strong>{preview.extraUnits} extra</strong> ({usd(preview.extraUnits * Math.round(Number(price) * 100))} at the seller’s price) and they’ll go on sale on the site at
+          {" "}<strong>{usd(preview.extraUnit)}</strong> each (the group’s all-in price + {markup || 0}% markup), up to {usd(preview.extrasValue)} if they all sell.
+          {" "}Total owed to the seller: <strong>{usd(preview.sellerCost)}</strong>.
+        </div>
+      )}
       {error && <div className="alert error">{error}</div>}
       {result && <div className="alert ok">{result}</div>}
       <div><button className="btn accent" disabled={busy || !preview || preview.buyers === 0} onClick={async () => {
         setError(null);
         const iso = localInputToIso(payBy, tz);
-        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} and CHARGE ${preview?.buyers} buyers' saved cards (${usd(preview?.charged ?? 0)} total, incl. ${usd(preview?.fees ?? 0)} GroupBuy fees)? This can't be undone.`)) return;
-        const r = await api("POST", "/api/admin/campaigns/deal", { id, price, cap, pay_by: iso, note });
+        const extra = preview && preview.extraUnits > 0 ? `\n\nYou're also buying ${preview.extraUnits} extra ${unit}s, which go on sale at ${usd(preview.extraUnit)} each.` : "";
+        if (!confirm(`Lock in ${usd(Math.round(Number(price) * 100))} and CHARGE ${preview?.buyers} buyers' saved cards (${usd(preview?.charged ?? 0)} total, incl. ${usd(preview?.fees ?? 0)} GroupBuy fees)?${extra}\n\nThis can't be undone.`)) return;
+        const r = await api("POST", "/api/admin/campaigns/deal", { id, price, cap, pay_by: iso, note, min: minOrder, markup });
         if (!r.ok) return setError(r.error ?? "Failed");
         setResult(`Done: charged ${r.data?.charged ?? 0} cards automatically${r.data?.failed ? `, ${r.data.failed} failed (sent a payment link)` : ""}; ${(Number(r.data?.won ?? 0) - Number(r.data?.charged ?? 0) - Number(r.data?.failed ?? 0)) || 0} without a card were emailed a payment link; ${r.data?.missed ?? 0} above the price were told they weren’t charged.`);
         await run("PATCH", "/api/admin/campaigns", { id, deal_note: note }); // refreshes the page
@@ -177,7 +192,7 @@ export function CancelCommitment({ id, paid }: { id: number; paid: boolean }) {
   return (
     <>
       <button className="btn sm ghost" disabled={busy} onClick={() => {
-        if (confirm(paid ? "Cancel this buyer and refund their card in full?" : "Cancel this buyer’s spot?")) run("PATCH", "/api/admin/commitments", { id, action: "cancel" });
+        if (confirm(paid ? "Cancel this order, refund the card in full, and email the buyer?" : "Cancel this buyer’s order? They’ll get an email letting them know.")) run("PATCH", "/api/admin/commitments", { id, action: "cancel" });
       }}>{paid ? "Cancel + refund" : "Cancel"}</button>
       {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
     </>
@@ -311,5 +326,77 @@ export function ImageUploader({ id, imageUrl, emoji }: { id: number; imageUrl: s
         }}>Remove picture</button></div>
       )}
     </div>
+  );
+}
+
+/* ---------- order updates ---------- */
+export function UpdateComposer({ id, counts, labels }: { id: number; counts: Record<string, number>; labels: Record<string, string> }) {
+  const router = useRouter();
+  const first = Object.keys(labels).find((k) => counts[k] > 0) ?? "everyone";
+  const [audience, setAudience] = useState(first);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const n = counts[audience] ?? 0;
+  return (
+    <form className="panel stack" style={{ gap: 12 }} onSubmit={async (e) => {
+      e.preventDefault();
+      if (!confirm(`Email this update to ${n} ${n === 1 ? "person" : "people"}?`)) return;
+      setBusy(true); setMsg(null);
+      const r = await api("POST", "/api/admin/updates", { campaign_id: id, audience, subject, body });
+      setBusy(false);
+      if (!r.ok) return setMsg({ ok: false, text: r.error ?? "Failed" });
+      setMsg({ ok: true, text: `Sent to ${r.data?.sent} of ${r.data?.total}${r.data?.live ? "" : " (email is off, so it was only logged)"}. It also shows on their order pages.` });
+      setSubject(""); setBody(""); router.refresh();
+    }}>
+      <h3>✉️ Email an order update</h3>
+      <div className="field">
+        <label>Send to</label>
+        <select value={audience} onChange={(e) => setAudience(e.target.value)}>
+          {Object.entries(labels).map(([k, label]) => <option key={k} value={k}>{label} ({counts[k] ?? 0})</option>)}
+        </select>
+      </div>
+      <div className="field"><label>Subject</label><input className="input" required maxLength={120} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Pickup moved to Thursday" /></div>
+      <div className="field"><label>Message</label><textarea rows={4} required maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Your order is in! Pickup is Thursday 7–9 PM in the Rubin Hall lobby. Bring your order email." /></div>
+      <p className="small muted">Each person gets a personal email with a link to their order, and the update appears on their order page.</p>
+      {msg && <div className={`alert ${msg.ok ? "ok" : "error"}`}>{msg.text}</div>}
+      <div><button className="btn accent" disabled={busy || n === 0}>{busy ? "Sending…" : `Send to ${n}`}</button></div>
+    </form>
+  );
+}
+
+/* ---------- extras management ---------- */
+export function ExtrasManager({ id, units, priceCents, bought }: { id: number; units: number; priceCents: number | null; bought: number | null }) {
+  const [u, setU] = useState(String(units));
+  const [p, setP] = useState(priceCents ? (priceCents % 100 ? (priceCents / 100).toFixed(2) : String(priceCents / 100)) : "");
+  const { busy, error, saved, run } = useAction();
+  return (
+    <div className="panel stack" style={{ gap: 12 }}>
+      <div className="row"><h3>📦 Extra stock for sale</h3>{units > 0 && priceCents ? <span className="badge good">On sale</span> : <span className="badge neutral">Not on sale</span>}</div>
+      <p className="small muted">{bought ? `You bought ${bought} from the seller. ` : ""}Units left over after the group are sold individually on this GroupBuy’s page.</p>
+      <div className="form-grid">
+        <div className="field"><label>Units left to sell</label><input className="input" type="number" min={0} value={u} onChange={(e) => setU(e.target.value)} /></div>
+        <div className="field"><label>Price per unit ($)</label><input className="input" inputMode="decimal" value={p} onChange={(e) => setP(e.target.value)} /></div>
+      </div>
+      {error && <div className="alert error">{error}</div>}
+      <div className="row">
+        <button className="btn sm accent" disabled={busy} onClick={() => run("PATCH", "/api/admin/extras", { campaign_id: id, units: u, price: p })}>Save</button>
+        {units > 0 && <button className="btn sm ghost" disabled={busy} onClick={() => { if (confirm("Stop selling extras? (Sets units left to 0.)")) run("PATCH", "/api/admin/extras", { campaign_id: id, units: 0 }); }}>Stop selling</button>}
+        {saved && <span className="badge good">Saved</span>}
+      </div>
+    </div>
+  );
+}
+
+export function CancelExtraOrder({ id, paid }: { id: number; paid: boolean }) {
+  const { busy, error, run } = useAction();
+  return (
+    <>
+      <button className="btn sm ghost" disabled={busy} onClick={() => {
+        if (confirm(paid ? "Cancel this order, refund the card in full and email the buyer?" : "Cancel this order and email the buyer?")) run("PATCH", "/api/admin/extras", { order_id: id, action: "cancel" });
+      }}>{paid ? "Cancel + refund" : "Cancel"}</button>
+      {error && <div className="small" style={{ color: "var(--bad)" }}>{error}</div>}
+    </>
   );
 }

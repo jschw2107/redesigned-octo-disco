@@ -39,7 +39,7 @@ export function WaitlistForm({ universities }: { universities: Uni[] }) {
         <input id="wl-email" className="input" type="email" required autoComplete="email" placeholder="you@mail.yu.edu"
           value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
-      <LocationPicker universities={universities} value={loc} onChange={setLoc} allowOther compact />
+      <LocationPicker universities={universities} value={loc} onChange={setLoc} allowOther compact showRoom={false} />
       {state.status === "error" && <div className="alert error" role="alert">{state.msg}</div>}
       <button className="btn accent" disabled={state.status === "busy"}>
         {state.status === "busy" ? "Saving…" : "Get alerts for new GroupBuys"}

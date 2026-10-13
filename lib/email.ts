@@ -236,13 +236,49 @@ export function commitPaidEmail(d: { email: string; name: string; code: string; 
   };
 }
 
-export function commitCancelledEmail(d: { email: string; name: string; code: string; title: string; refundedCents: number }) {
-  const refund = d.refundedCents > 0 ? ` We've refunded ${money(d.refundedCents)} to your card; it usually appears within 5–10 business days.` : "";
+export function commitCancelledEmail(d: { email: string; name: string; code: string; title: string; refundedCents: number;
+  wasCharged?: boolean; reason?: "admin" | "campaign"; url?: string }) {
+  const first = esc(d.name.split(" ")[0]);
+  const why = d.reason === "campaign"
+    ? `GroupBuy #${esc(d.code)}: ${esc(d.title)} has been cancelled, so your order is cancelled too.`
+    : `Your order in GroupBuy #${esc(d.code)}: ${esc(d.title)} has been cancelled.`;
+  const money_ = d.refundedCents > 0
+    ? `We've refunded <strong>${money(d.refundedCents)}</strong> to your card. It usually appears within 5–10 business days.`
+    : d.wasCharged ? "If you were charged, a refund is on its way." : "Your card has not been charged and won't be.";
+  const plain = (h: string) => h.replace(/<[^>]+>/g, "");
   return {
     to: d.email,
-    subject: `Your GroupBuy #${d.code} order was cancelled`,
-    html: layout("Your order was cancelled", p(`Hi ${esc(d.name.split(" ")[0])}, your spot in GroupBuy #${esc(d.code)}: ${esc(d.title)} was cancelled.${esc(refund)}`)),
-    text: `Your spot in GroupBuy #${d.code} ${d.title} was cancelled.${refund}`,
+    subject: `Cancelled: your GroupBuy #${d.code} order (${d.title})`,
+    html: layout("Your order was cancelled", p(`Hi ${first}, ${why}`) + p(money_) + p("Questions? Just reply to this email."),
+      d.url ? { href: d.url, label: "See other GroupBuys" } : undefined),
+    text: `Hi ${d.name.split(" ")[0]}, ${plain(why)}\n${plain(money_)}\nQuestions? Just reply to this email.${d.url ? `\n${d.url}` : ""}`,
+  };
+}
+
+export function extraPaidEmail(d: { email: string; name: string; code: string; campaignCode: string; title: string; unit: string; qty: number;
+  amountCents: number; paid: boolean; note: string; url: string }) {
+  return {
+    to: d.email,
+    subject: `${d.paid ? "Paid" : "Reserved"}: ${d.qty} × ${d.title} (order ${d.code})`,
+    html: layout(d.paid ? "Payment received ✓" : "It's set aside for you",
+      p(`Hi ${esc(d.name.split(" ")[0])}, you ${d.paid ? "bought" : "reserved"} <strong>${esc(unitText(d.qty, d.unit))}</strong> of ${esc(d.title)} from GroupBuy #${esc(d.campaignCode)}'s extra stock.`) +
+      details([["Order", d.code], [d.paid ? "Paid" : "Due at pickup", money(d.amountCents)]]) +
+      (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : p("We'll email you pickup or delivery details.")),
+      { href: d.url, label: "View my order" }),
+    text: `You ${d.paid ? "bought" : "reserved"} ${unitText(d.qty, d.unit)} of ${d.title} (order ${d.code}). ${d.paid ? "Paid" : "Due at pickup"}: ${money(d.amountCents)}.\n${d.note}\n${d.url}`,
+  };
+}
+
+export function extraCancelledEmail(d: { email: string; name: string; code: string; title: string; refundedCents: number }) {
+  const refund = d.refundedCents > 0
+    ? `We've refunded <strong>${money(d.refundedCents)}</strong> to your card. It usually appears within 5–10 business days.`
+    : "You haven't been charged.";
+  return {
+    to: d.email,
+    subject: `Cancelled: your extras order ${d.code} (${d.title})`,
+    html: layout("Your order was cancelled",
+      p(`Hi ${esc(d.name.split(" ")[0])}, your extras order <strong>${esc(d.code)}</strong> for ${esc(d.title)} has been cancelled.`) + p(refund) + p("Questions? Just reply to this email.")),
+    text: `Your extras order ${d.code} for ${d.title} has been cancelled. ${refund.replace(/<[^>]+>/g, "")}\nQuestions? Just reply to this email.`,
   };
 }
 
@@ -276,5 +312,17 @@ export function dealChargedEmail(d: { email: string; name: string; code: string;
       (d.note ? p(esc(d.note).replace(/\n/g, "<br>")) : p("We'll email you pickup or delivery details.")),
       { href: d.url, label: "View my order" }),
     text: `GroupBuy #${d.code} ${d.title} landed at ${money(d.finalCents)}. We charged ${money(d.amountCents)} to ${d.card} for ${unitText(d.qty, d.unit)}.\n${d.note}\n${d.url}`,
+  };
+}
+
+export function orderUpdateEmail(d: { email: string; name: string; code: string; title: string; subject: string; body: string; url: string }) {
+  return {
+    to: d.email,
+    subject: `GroupBuy #${d.code} update: ${d.subject}`,
+    html: layout(d.subject,
+      p(`Hi ${esc(d.name.split(" ")[0])}, here's an update about <strong>GroupBuy #${esc(d.code)}: ${esc(d.title)}</strong>.`) +
+      p(esc(d.body).replace(/\n/g, "<br>")),
+      { href: d.url, label: "View my order" }),
+    text: `Update about GroupBuy #${d.code}: ${d.title}\n\n${d.subject}\n\n${d.body}\n\n${d.url}`,
   };
 }

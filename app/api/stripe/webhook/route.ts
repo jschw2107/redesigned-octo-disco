@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { markCommitPaid, siteUrl } from "@/lib/fulfill";
 import { saveCardFromSession, sendJoinedReceipt } from "@/lib/cards";
+import { cancelExtraCheckout, markExtraPaid } from "@/lib/extras";
 
 // Stripe → your server. In the Stripe dashboard, add an endpoint for https://YOUR-SITE/api/stripe/webhook
 // with the events checkout.session.completed, checkout.session.async_payment_succeeded and payment_intent.succeeded.
@@ -25,6 +26,18 @@ export async function POST(req: Request) {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.mode === "setup" && session.metadata?.kind === "setup" && session.metadata.token) {
         if (await saveCardFromSession(session.metadata.token, session.id)) await sendJoinedReceipt(session.metadata.token, await siteUrl(req));
+        return NextResponse.json({ received: true });
+      }
+    }
+    // Extras bought from leftover stock.
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded" || event.type === "checkout.session.expired") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.kind === "extra" && session.metadata.code) {
+        if (event.type === "checkout.session.expired") await cancelExtraCheckout(session.metadata.code);
+        else if (session.payment_status === "paid") {
+          const pi = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+          await markExtraPaid(session.metadata.code, pi, await siteUrl(req));
+        }
         return NextResponse.json({ received: true });
       }
     }
